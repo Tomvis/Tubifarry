@@ -271,8 +271,14 @@ namespace Tubifarry.Metadata.Lyrics
                 () => _lyricsProviders.FetchFromBinimumAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "Binimum");
             yield return (ActiveSettings.LyricsPlusEnabled,
                 () => _lyricsProviders.FetchFromLyricsPlusAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "LyricsPlus");
+            yield return (ActiveSettings.NetEaseEnabled,
+                () => _lyricsProviders.FetchFromNetEaseAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "NetEase");
             yield return (ActiveSettings.UnisonEnabled,
                 () => _lyricsProviders.FetchFromUnisonAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "Unison");
+            yield return (ActiveSettings.DarkLyricsEnabled,
+                () => _lyricsProviders.FetchFromDarkLyricsAsync(track.Artist, track.Title, track.Album), "DarkLyrics");
+            yield return (ActiveSettings.MetalArchivesEnabled && !string.IsNullOrWhiteSpace(ActiveSettings.FlareSolverrUrl),
+                () => _lyricsProviders.FetchFromMetalArchivesAsync(track.Artist, track.Title, track.Album), "MetalArchives");
             yield return (ActiveSettings.GeniusEnabled && !string.IsNullOrWhiteSpace(ActiveSettings.GeniusApiKey),
                 () => _lyricsProviders.FetchFromGeniusAsync(track.Artist, track.Title), "Genius");
         }

@@ -19,6 +19,9 @@ namespace Tubifarry.Metadata.Lyrics
         private readonly Lazy<BinimumProvider> _binimumProvider;
         private readonly Lazy<LyricsPlusProvider> _lyricsPlusProvider;
         private readonly Lazy<UnisonProvider> _unisonProvider;
+        private readonly Lazy<NetEaseProvider> _netEaseProvider;
+        private readonly Lazy<DarkLyricsProvider> _darkLyricsProvider;
+        private readonly Lazy<MetalArchivesProvider> _metalArchivesProvider;
 
         public LyricsProviderManager(HttpClient httpClient, Logger logger, LyricsEnhancerSettings settings)
         {
@@ -31,6 +34,9 @@ namespace Tubifarry.Metadata.Lyrics
             _binimumProvider = new Lazy<BinimumProvider>(() => new BinimumProvider(_httpClient, _logger, _settings));
             _lyricsPlusProvider = new Lazy<LyricsPlusProvider>(() => new LyricsPlusProvider(_httpClient, _logger, _settings));
             _unisonProvider = new Lazy<UnisonProvider>(() => new UnisonProvider(_httpClient, _logger, _settings));
+            _netEaseProvider = new Lazy<NetEaseProvider>(() => new NetEaseProvider(_httpClient, _logger, _settings));
+            _darkLyricsProvider = new Lazy<DarkLyricsProvider>(() => new DarkLyricsProvider(_httpClient, _logger, _settings));
+            _metalArchivesProvider = new Lazy<MetalArchivesProvider>(() => new MetalArchivesProvider(_httpClient, _logger, _settings));
         }
 
         public Task<Lyric?> FetchFromLrcLibAsync(string artistName, string trackTitle, string albumName, int duration)
@@ -47,5 +53,14 @@ namespace Tubifarry.Metadata.Lyrics
 
         public Task<Lyric?> FetchFromUnisonAsync(string artistName, string trackTitle, string albumName, int duration)
             => _unisonProvider.Value.FetchLyricsAsync(artistName, trackTitle, albumName, duration);
+
+        public Task<Lyric?> FetchFromNetEaseAsync(string artistName, string trackTitle, string albumName, int durationSeconds)
+            => _netEaseProvider.Value.FetchLyricsAsync(artistName, trackTitle, albumName, durationSeconds);
+
+        public Task<Lyric?> FetchFromDarkLyricsAsync(string artistName, string trackTitle, string albumName)
+            => _darkLyricsProvider.Value.FetchLyricsAsync(artistName, trackTitle, albumName);
+
+        public Task<Lyric?> FetchFromMetalArchivesAsync(string artistName, string trackTitle, string albumName)
+            => _metalArchivesProvider.Value.FetchLyricsAsync(artistName, trackTitle, albumName);
     }
 }

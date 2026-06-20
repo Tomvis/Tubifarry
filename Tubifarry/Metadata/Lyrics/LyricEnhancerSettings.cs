@@ -28,7 +28,7 @@ namespace Tubifarry.Metadata.Lyrics
 
             // Validate at least one provider is enabled
             RuleFor(x => x)
-                .Must(x => x.LrcLibEnabled || x.GeniusEnabled || x.BinimumEnabled || x.LyricsPlusEnabled || x.UnisonEnabled)
+                .Must(x => x.LrcLibEnabled || x.GeniusEnabled || x.BinimumEnabled || x.LyricsPlusEnabled || x.UnisonEnabled || x.NetEaseEnabled || x.DarkLyricsEnabled || x.MetalArchivesEnabled)
                 .WithMessage("At least one lyrics provider must be enabled");
 
             // Validate UpdateInterval when scheduled updates are enabled
@@ -99,6 +99,21 @@ namespace Tubifarry.Metadata.Lyrics
 
         [FieldDefinition(16, Label = "Update Interval", Type = FieldType.Number, Unit = "days", Section = MetadataSectionType.Metadata, HelpText = "How often to run scheduled lyrics updates.")]
         public int UpdateInterval { get; set; } = 7;
+
+        // NetEase Provider settings
+        [FieldDefinition(17, Label = "Enable NetEase", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use NetEase Cloud Music as a lyrics provider (synced; strong coverage incl. metal)")]
+        public bool NetEaseEnabled { get; set; }
+
+        // DarkLyrics Provider settings
+        [FieldDefinition(18, Label = "Enable DarkLyrics", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use DarkLyrics as a lyrics provider (plain text; metal archive)")]
+        public bool DarkLyricsEnabled { get; set; }
+
+        // Metal Archives Provider settings
+        [FieldDefinition(19, Label = "Enable Metal Archives", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use Encyclopaedia Metallum (plain text; requires FlareSolverr for Cloudflare)")]
+        public bool MetalArchivesEnabled { get; set; }
+
+        [FieldDefinition(20, Label = "FlareSolverr URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "FlareSolverr endpoint used to bypass Cloudflare for Metal Archives", Placeholder = "http://localhost:8191")]
+        public string FlareSolverrUrl { get; set; } = string.Empty;
 
         public LyricsEnhancerSettings() => Instance = this;
 
