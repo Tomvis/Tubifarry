@@ -39,21 +39,38 @@ namespace Tubifarry.Metadata.Covers.Sources
             {
                 HttpResponse resp = await _http.GetAsync(request);
                 using JsonDocument doc = JsonDocument.Parse(resp.Content);
-                JsonElement results = doc.RootElement.GetProperty("results");
-                JsonElement first = results.EnumerateArray().FirstOrDefault();
-                if (first.ValueKind != JsonValueKind.Object) return null;
-                if (!first.TryGetProperty("artworkUrl100", out JsonElement art)) return null;
-                string raw = art.GetString()!;
-                if (!raw.Contains("100x100bb")) return null;
-                string url = ToHighRes(raw);
-                // iTunes art is always square; report 3000 as the nominal high-res edge.
-                return new CoverCandidate(url, 3000, 3000, SourceKey);
+                if (!doc.RootElement.TryGetProperty("results", out JsonElement results)) return null;
+                foreach (JsonElement r in results.EnumerateArray())
+                {
+                    if (r.ValueKind != JsonValueKind.Object) continue;
+                    string artist = r.TryGetProperty("artistName", out var an) ? an.GetString() ?? "" : "";
+                    string album = r.TryGetProperty("collectionName", out var cn) ? cn.GetString() ?? "" : "";
+                    // guard against results[0] being a different album/artist (wrong-cover at scale)
+                    if (!IsReasonableMatch(album, artist, query.AlbumTitle, query.ArtistName)) continue;
+                    if (!r.TryGetProperty("artworkUrl100", out JsonElement art)) continue;
+                    string raw = art.GetString() ?? string.Empty;
+                    if (!raw.Contains("100x100bb")) continue;
+                    // iTunes art is always square; report 3000 as the nominal high-res edge.
+                    return new CoverCandidate(ToHighRes(raw), 3000, 3000, SourceKey);
+                }
+                return null;
             }
             catch (System.Exception ex)
             {
                 _logger.Debug(ex, "iTunes cover lookup failed for {0} - {1}", query.ArtistName, query.AlbumTitle);
                 return null;
             }
+        }
+
+        public static bool IsReasonableMatch(string resAlbum, string resArtist, string qAlbum, string qArtist)
+        {
+            bool albumOk = !string.IsNullOrEmpty(resAlbum) &&
+                (resAlbum.Contains(qAlbum, System.StringComparison.OrdinalIgnoreCase) ||
+                 qAlbum.Contains(resAlbum, System.StringComparison.OrdinalIgnoreCase));
+            bool artistOk = !string.IsNullOrEmpty(resArtist) &&
+                (resArtist.Contains(qArtist, System.StringComparison.OrdinalIgnoreCase) ||
+                 qArtist.Contains(resArtist, System.StringComparison.OrdinalIgnoreCase));
+            return albumOk && artistOk;
         }
     }
 }

@@ -25,5 +25,14 @@ namespace Tubifarry.Tests.Covers
         {
             Assert.Equal("itunes", ITunesCoverSource.SourceKey);
         }
+
+        [Theory]
+        [InlineData("Currents", "In Vain", "Currents", "In Vain", true)]
+        [InlineData("Currents (Deluxe Edition)", "In Vain", "Currents", "In Vain", true)]
+        [InlineData("Greatest Hits", "Some Other Band", "Currents", "In Vain", false)]
+        [InlineData("Currents", "Tame Impala", "Currents", "In Vain", false)]
+        public void Match_gate_requires_album_and_artist_overlap(
+            string resAlbum, string resArtist, string qAlbum, string qArtist, bool expected)
+            => Assert.Equal(expected, ITunesCoverSource.IsReasonableMatch(resAlbum, resArtist, qAlbum, qArtist));
     }
 }
