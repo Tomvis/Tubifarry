@@ -33,6 +33,7 @@ namespace Tubifarry.Metadata.Covers.Sources
                 .AddQueryParam("term", BuildTerm(query))
                 .AddQueryParam("entity", "album")
                 .AddQueryParam("limit", "5")
+                .WithRateLimit(2.0) // iTunes 403-blocks on rapid bursts; space requests per-host
                 .Build();
             request.RequestTimeout = System.TimeSpan.FromSeconds(10);
             try
