@@ -148,5 +148,10 @@ jobs:
           else
             MINIMUM_LIDARR_VERSION="$MAJOR_VERSION"
           fi
+          # Fork override: pin minimum to the deployed server's Lidarr (3.1.2.4913).
+          # We build against a 3.1.3 submodule but only use stable APIs present in 3.1.2,
+          # so the plugin runs on 3.1.2.x. Without this, the auto-derived 3.1.3.0 minimum
+          # makes Lidarr 3.1.2.x reject the plugin as "no compatible release".
+          MINIMUM_LIDARR_VERSION="3.1.2.0"
           echo "Minimum Lidarr Version: $MINIMUM_LIDARR_VERSION"
           echo "minimum_lidarr_version=$MINIMUM_LIDARR_VERSION" >> $GITHUB_OUTPUT
