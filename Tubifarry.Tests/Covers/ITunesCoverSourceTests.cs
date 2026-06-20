@@ -10,7 +10,7 @@ namespace Tubifarry.Tests.Covers
         public void Upgrades_artwork_url_to_max_resolution()
         {
             var hi = ITunesCoverSource.ToHighRes("https://is1.mzstatic.com/image/thumb/abc/100x100bb.jpg");
-            Assert.Equal("https://is1.mzstatic.com/image/thumb/abc/100000x100000bb.jpg", hi);
+            Assert.Equal("https://is1.mzstatic.com/image/thumb/abc/3000x3000bb.jpg", hi);
         }
 
         [Fact]

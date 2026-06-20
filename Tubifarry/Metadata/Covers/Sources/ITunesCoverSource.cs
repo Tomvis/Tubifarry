@@ -23,8 +23,9 @@ namespace Tubifarry.Metadata.Covers.Sources
 
         public static string BuildTerm(CoverQuery q) => $"{q.ArtistName} {q.AlbumTitle}".Trim();
 
+        // Apple rejects absurd sizes (100000x100000 -> HTTP 400); 3000x3000 is the practical max that returns a real image.
         public static string ToHighRes(string artworkUrl100) =>
-            artworkUrl100.Replace("100x100bb", "100000x100000bb");
+            artworkUrl100.Replace("100x100bb", "3000x3000bb");
 
         public async Task<CoverCandidate?> GetCoverAsync(CoverQuery query, CancellationToken ct)
         {
