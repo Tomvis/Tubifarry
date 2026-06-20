@@ -15,8 +15,6 @@ namespace Tubifarry.Metadata.Covers
     public record CoverCandidate(string Url, int Width, int Height, string Source)
     {
         public int MinEdge => Width < Height ? Width : Height;
-        public bool IsSquare => Width > 0 && Height > 0
-            && System.Math.Abs(Width - Height) <= (Width + Height) * 0.05 / 2;
     }
 
     public interface ICoverSource

@@ -23,8 +23,7 @@ namespace Tubifarry.Metadata.Covers
             {
                 if (!_sources.TryGetValue(key, out ICoverSource? src)) continue;
                 CoverCandidate? c = await src.GetCoverAsync(query, ct);
-                // size==0 means "unknown" (e.g. CAA original with no thumb hint) — accept as last-resort.
-                if (c != null && (c.MinEdge == 0 || c.MinEdge >= minEdge))
+                if (c != null && c.MinEdge >= minEdge)
                 {
                     _logger.Debug("High-res cover for {0} - {1} from {2} ({3}px)",
                         query.ArtistName, query.AlbumTitle, c.Source, c.MinEdge);

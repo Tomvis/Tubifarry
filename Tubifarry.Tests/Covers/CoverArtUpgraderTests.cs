@@ -49,5 +49,13 @@ namespace Tubifarry.Tests.Covers
             var c = await up.FindBestAsync(Q, order: new[] { "itunes" }, minEdge: 1000, CancellationToken.None);
             Assert.Null(c);
         }
+
+        [Fact]
+        public async Task Rejects_unknown_size_candidate()
+        {
+            var up = Make(new FakeSource("caa", new CoverCandidate("caa.jpg", 0, 0, "caa")));
+            var c = await up.FindBestAsync(Q, order: new[] { "caa" }, minEdge: 1000, CancellationToken.None);
+            Assert.Null(c);
+        }
     }
 }

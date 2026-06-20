@@ -39,6 +39,7 @@ namespace Tubifarry.Metadata.Covers.Sources
             HttpRequest request = new HttpRequestBuilder("https://bandcamp.com/api/fuzzysearch/1/autocomplete")
                 .AddQueryParam("q", $"{query.ArtistName} {query.AlbumTitle}")
                 .Build();
+            request.RequestTimeout = System.TimeSpan.FromSeconds(10);
             try
             {
                 HttpResponse resp = await _http.GetAsync(request);

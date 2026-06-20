@@ -27,5 +27,12 @@ namespace Tubifarry.Tests.Covers
 
         [Fact]
         public void Key_is_caa() => Assert.Equal("caa", CoverArtArchiveCoverSource.SourceKey);
+
+        [Theory]
+        [InlineData("c4a98a8e-3b1f-4f2a-9a1a-2b3c4d5e6f70", true)]
+        [InlineData("12345@deezer", false)]
+        [InlineData("", false)]
+        public void IsMbId_validates_guid_format(string id, bool expected)
+            => Assert.Equal(expected, CoverArtArchiveCoverSource.IsMbId(id));
     }
 }

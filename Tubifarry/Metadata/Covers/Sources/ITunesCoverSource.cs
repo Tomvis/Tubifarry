@@ -33,6 +33,7 @@ namespace Tubifarry.Metadata.Covers.Sources
                 .AddQueryParam("entity", "album")
                 .AddQueryParam("limit", "5")
                 .Build();
+            request.RequestTimeout = System.TimeSpan.FromSeconds(10);
             try
             {
                 HttpResponse resp = await _http.GetAsync(request);
@@ -41,7 +42,9 @@ namespace Tubifarry.Metadata.Covers.Sources
                 JsonElement first = results.EnumerateArray().FirstOrDefault();
                 if (first.ValueKind != JsonValueKind.Object) return null;
                 if (!first.TryGetProperty("artworkUrl100", out JsonElement art)) return null;
-                string url = ToHighRes(art.GetString()!);
+                string raw = art.GetString()!;
+                if (!raw.Contains("100x100bb")) return null;
+                string url = ToHighRes(raw);
                 // iTunes art is always square; report 3000 as the nominal high-res edge.
                 return new CoverCandidate(url, 3000, 3000, SourceKey);
             }

@@ -12,6 +12,12 @@ namespace Tubifarry.Metadata.Covers.Sources
         public const string SourceKey = "caa";
         public string Key => SourceKey;
 
+        private static readonly System.Text.RegularExpressions.Regex MbIdRegex =
+            new(@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        public static bool IsMbId(string? id) => !string.IsNullOrEmpty(id) && MbIdRegex.IsMatch(id);
+
         private readonly IHttpClient _http;
         private readonly Logger _logger;
 
@@ -34,7 +40,10 @@ namespace Tubifarry.Metadata.Covers.Sources
                 if (img.TryGetProperty("thumbnails", out JsonElement th))
                 {
                     if (th.TryGetProperty("1200", out _)) size = 1200;
+                    else if (th.TryGetProperty("large", out _)) size = 500;
                     else if (th.TryGetProperty("500", out _)) size = 500;
+                    else if (th.TryGetProperty("small", out _)) size = 250;
+                    else if (th.TryGetProperty("250", out _)) size = 250;
                 }
                 return new CoverCandidate(url, size, size, SourceKey);
             }
@@ -46,10 +55,11 @@ namespace Tubifarry.Metadata.Covers.Sources
             string? id = query.ReleaseGroupMbId;
             string kind = "release-group";
             if (string.IsNullOrEmpty(id)) { id = query.ReleaseMbId; kind = "release"; }
-            if (string.IsNullOrEmpty(id)) return null;
+            if (!IsMbId(id)) return null;
 
             HttpRequest request = new HttpRequestBuilder($"https://coverartarchive.org/{kind}/{id}")
                 .Build();
+            request.RequestTimeout = System.TimeSpan.FromSeconds(10);
             try
             {
                 HttpResponse resp = await _http.GetAsync(request);
