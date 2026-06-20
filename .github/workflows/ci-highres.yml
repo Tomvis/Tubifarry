@@ -1,0 +1,46 @@
+name: CI (highres-covers)
+
+on:
+  push:
+    branches: [highres-covers]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.405
+
+      - name: Pin SDK
+        run: echo '{"sdk":{"version":"8.0.405"}}' > ./global.json
+
+      - name: Restore
+        run: dotnet restore Tubifarry.sln
+
+      - name: Build (Release)
+        run: >
+          dotnet build Tubifarry.sln -c Release -f net8.0
+          -p:Author=Tomvis
+          -p:RepoUrl=https://github.com/Tomvis/Tubifarry
+          -p:Branch=highres-covers
+          -p:CI=true
+          -v:m
+
+      - name: Test
+        run: dotnet test Tubifarry.sln -c Release -f net8.0 --no-build -v:m
