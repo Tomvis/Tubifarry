@@ -3,6 +3,7 @@ using NzbDrone.Core.Annotations;
 using NzbDrone.Core.Extras.Metadata;
 using NzbDrone.Core.ThingiProvider;
 using NzbDrone.Core.Validation;
+using System.Linq;
 using Tubifarry.Metadata.Proxy.MetadataProvider.SkyHook;
 
 namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
@@ -80,6 +81,21 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
 
         [FieldDefinition(6, Label = "Multi-Source Population", Section = MetadataSectionType.Metadata, Type = FieldType.Checkbox, HelpText = "Enable queries to multiple metadata providers when populating artist information. Uses fallback strategy when previous album data exists.")]
         public bool PopulateWithMultipleProxies { get; set; } = true;
+
+        [FieldDefinition(7, Label = "High-Res Cover Art", Section = MetadataSectionType.Metadata, Type = FieldType.Checkbox, HelpText = "Replace the album cover with a high-resolution image fetched directly from the sources below, bypassing Lidarr's 1200px cap.")]
+        public bool EnableHighResCovers { get; set; } = true;
+
+        [FieldDefinition(8, Label = "Cover Source Order", Section = MetadataSectionType.Metadata, Type = FieldType.Textbox, HelpText = "Comma-separated source order. Options: itunes, bandcamp, caa.", Placeholder = "itunes,bandcamp,caa")]
+        public string CoverSourceOrder { get; set; } = "itunes,bandcamp,caa";
+
+        [FieldDefinition(9, Label = "Minimum Cover Resolution", Unit = "px", Section = MetadataSectionType.Metadata, Type = FieldType.Number, HelpText = "Only replace the cover when a source provides at least this edge length.", Placeholder = "1000")]
+        public int MinCoverResolution { get; set; } = 1000;
+
+        public IReadOnlyList<string> ParsedSourceOrder() =>
+            (CoverSourceOrder ?? string.Empty)
+                .Split(',', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries)
+                .Select(s => s.ToLowerInvariant())
+                .ToList();
 
         public bool TryFindArtist { get; internal set; }
 
