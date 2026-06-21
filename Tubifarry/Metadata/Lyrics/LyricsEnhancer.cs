@@ -1,4 +1,5 @@
 using NLog;
+using System.Text.RegularExpressions;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using NzbDrone.Common.Instrumentation.Extensions;
@@ -243,6 +244,12 @@ namespace Tubifarry.Metadata.Lyrics
                 if (lyric == null)
                     continue;
 
+                if (!IsAcceptableLyric(lyric))
+                {
+                    _logger.Trace($"{provider.Name} returned a stub/credits-only lyric ({CountRealLyricLines(lyric)} real lines), skipping");
+                    continue;
+                }
+
                 SyncLevel level = GetSyncLevel(lyric);
                 if (level >= desiredLevel)
                 {
@@ -262,6 +269,23 @@ namespace Tubifarry.Metadata.Lyrics
 
             return bestSoFar;
         }
+
+        // Quality gate: reject empty / one-or-two-line / credits-only results so the provider
+        // chain keeps searching instead of accepting a garbage .lrc. Catches the "X Contributors"
+        // Genius stubs and NetEase credits-only blocks that produced ~1,700 bad existing lyrics.
+        private const int MinAcceptableLyricLines = 3;
+
+        private static readonly Regex CreditsLineRegex = new(
+            @"^\s*(作词|作曲|编曲|制作人?|监制|混音|母带|录音|出品人?|策划|发行|" +
+            @"lyrics?|music|composed?|written|arranged?|produced?|performed|" +
+            @"vocals?|guitars?|drums?|bass|mixed|mastered|engineered)\s*(by\b|[:：])",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static int CountRealLyricLines(Lyric lyric) => lyric.Lines.Count(line =>
+            !string.IsNullOrWhiteSpace(line.Text) && !CreditsLineRegex.IsMatch(line.Text));
+
+        private static bool IsAcceptableLyric(Lyric lyric) =>
+            CountRealLyricLines(lyric) >= MinAcceptableLyricLines;
 
         private IEnumerable<(bool Enabled, Func<Task<Lyric?>> Fetch, string Name)> EnumerateProviders(TrackInfo track)
         {
