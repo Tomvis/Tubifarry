@@ -72,5 +72,41 @@ namespace Tubifarry.Metadata.Covers.Sources
                 return null;
             }
         }
+
+        /// <summary>Parse a CAA index JSON; return the first disc/Medium image URL, or null.</summary>
+        public static string? ParseDiscArt(string json)
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("images", out JsonElement images)) return null;
+            foreach (JsonElement img in images.EnumerateArray())
+            {
+                if (!img.TryGetProperty("types", out JsonElement types) || types.ValueKind != JsonValueKind.Array) continue;
+                bool isMedium = types.EnumerateArray().Any(t => string.Equals(t.GetString(), "Medium", System.StringComparison.OrdinalIgnoreCase));
+                if (isMedium && img.TryGetProperty("image", out JsonElement im))
+                    return im.GetString();
+            }
+            return null;
+        }
+
+        public async Task<string?> GetDiscArtUrlAsync(CoverQuery query, CancellationToken ct)
+        {
+            string? id = query.ReleaseGroupMbId;
+            string kind = "release-group";
+            if (string.IsNullOrEmpty(id)) { id = query.ReleaseMbId; kind = "release"; }
+            if (!IsMbId(id)) return null;
+            HttpRequest request = new HttpRequestBuilder($"https://coverartarchive.org/{kind}/{id}").Build();
+            request.RequestTimeout = System.TimeSpan.FromSeconds(10);
+            try
+            {
+                HttpResponse resp = await _http.GetAsync(request);
+                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
+                return ParseDiscArt(resp.Content);
+            }
+            catch (System.Exception ex)
+            {
+                _logger.Debug(ex, "CAA disc-art lookup failed for {0}", id);
+                return null;
+            }
+        }
     }
 }

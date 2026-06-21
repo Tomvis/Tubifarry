@@ -34,5 +34,18 @@ namespace Tubifarry.Tests.Covers
         [InlineData("", false)]
         public void IsMbId_validates_guid_format(string id, bool expected)
             => Assert.Equal(expected, CoverArtArchiveCoverSource.IsMbId(id));
+
+        [Fact]
+        public void ParseDiscArt_finds_Medium_image()
+        {
+            string json = @"{ ""images"": [
+                { ""types"":[""Front""], ""image"":""http://x/front.jpg"" },
+                { ""types"":[""Medium""], ""image"":""http://x/disc.jpg"" } ] }";
+            Assert.Equal("http://x/disc.jpg", CoverArtArchiveCoverSource.ParseDiscArt(json));
+        }
+
+        [Fact]
+        public void ParseDiscArt_null_when_no_disc()
+            => Assert.Null(CoverArtArchiveCoverSource.ParseDiscArt(@"{""images"":[{""types"":[""Front""],""image"":""http://x/f.jpg""}]}"));
     }
 }

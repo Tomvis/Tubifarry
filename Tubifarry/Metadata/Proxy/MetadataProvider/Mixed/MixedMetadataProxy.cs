@@ -440,13 +440,24 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
                 CoverCandidate? best = _coverUpgrader
                     .FindBestAsync(query, settings.ParsedSourceOrder(), settings.MinCoverResolution, System.Threading.CancellationToken.None)
                     .GetAwaiter().GetResult();
-                if (best == null)
-                    return;
+                if (best != null)
+                {
+                    album.Images ??= new List<MediaCover>();
+                    album.Images.RemoveAll(i => i.CoverType == MediaCoverTypes.Cover);
+                    album.Images.Insert(0, new MediaCover(MediaCoverTypes.Cover, best.Url));
+                    _logger.Debug($"Upgraded cover for '{album.Title}' via {best.Source}");
+                }
 
-                album.Images ??= new List<MediaCover>();
-                album.Images.RemoveAll(i => i.CoverType == MediaCoverTypes.Cover);
-                album.Images.Insert(0, new MediaCover(MediaCoverTypes.Cover, best.Url));
-                _logger.Debug($"Upgraded cover for '{album.Title}' via {best.Source}");
+                string? discUrl = _coverUpgrader
+                    .GetDiscArtUrlAsync(query, System.Threading.CancellationToken.None)
+                    .GetAwaiter().GetResult();
+                if (!string.IsNullOrEmpty(discUrl))
+                {
+                    album.Images ??= new List<MediaCover>();
+                    album.Images.RemoveAll(i => i.CoverType == MediaCoverTypes.Disc);
+                    album.Images.Add(new MediaCover(MediaCoverTypes.Disc, discUrl));
+                    _logger.Debug($"Added high-res disc art for '{album.Title}'");
+                }
             }
             catch (System.Exception ex)
             {

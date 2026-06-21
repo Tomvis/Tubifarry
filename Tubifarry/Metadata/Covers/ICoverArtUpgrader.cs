@@ -7,5 +7,6 @@ namespace Tubifarry.Metadata.Covers
     public interface ICoverArtUpgrader
     {
         Task<CoverCandidate?> FindBestAsync(CoverQuery query, IReadOnlyList<string> order, int minEdge, CancellationToken ct);
+        Task<string?> GetDiscArtUrlAsync(CoverQuery query, CancellationToken ct);
     }
 }

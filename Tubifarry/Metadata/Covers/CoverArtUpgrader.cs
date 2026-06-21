@@ -32,5 +32,12 @@ namespace Tubifarry.Metadata.Covers
             }
             return null;
         }
+
+        public async Task<string?> GetDiscArtUrlAsync(CoverQuery query, CancellationToken ct)
+        {
+            if (_sources.TryGetValue("caa", out ICoverSource? src) && src is Sources.CoverArtArchiveCoverSource caa)
+                return await caa.GetDiscArtUrlAsync(query, ct);
+            return null;
+        }
     }
 }
