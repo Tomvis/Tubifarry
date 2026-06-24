@@ -281,8 +281,18 @@ namespace Tubifarry.Metadata.Lyrics
             @"vocals?|guitars?|drums?|bass|mixed|mastered|engineered)\s*(by\b|[:：])",
             RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+        // Non-lyric "content" lines some providers return: structure / instrumental markers and
+        // performance annotations wholly wrapped in brackets ([Instrumental], [Chorus 1], [Solo: X],
+        // [?], [Music: Mirai]), plus Genius scrape headers ("2 ContributorsXyz Lyrics"). Excluding
+        // these from the real-line count stops instrumental tracks and Genius stubs slipping the gate.
+        private static readonly Regex JunkLineRegex = new(
+            @"^\s*\[[^\]]*\]\s*$|\b\d+\s*contributors?\b",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private static int CountRealLyricLines(Lyric lyric) => lyric.Lines.Count(line =>
-            !string.IsNullOrWhiteSpace(line.Text) && !CreditsLineRegex.IsMatch(line.Text));
+            !string.IsNullOrWhiteSpace(line.Text)
+            && !CreditsLineRegex.IsMatch(line.Text)
+            && !JunkLineRegex.IsMatch(line.Text));
 
         private static bool IsAcceptableLyric(Lyric lyric) =>
             CountRealLyricLines(lyric) >= MinAcceptableLyricLines;
@@ -354,7 +364,7 @@ namespace Tubifarry.Metadata.Lyrics
                 return null;
 
             string? content = target.Value.Converter.Write(lyricWithMeta);
-            return string.IsNullOrEmpty(content) ? null : (content, target.Value.Extension);
+            return string.IsNullOrWhiteSpace(content) ? null : (content, target.Value.Extension);
         }
 
         private static string? GetLyricsContent(Lyric lyric, LyricOptions option) =>
