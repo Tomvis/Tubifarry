@@ -217,8 +217,11 @@ namespace Tubifarry.Metadata.Lyrics
             if (lyric == null)
             {
                 _logger.Trace($"No lyrics found for track: {trackInfo.Title} by {trackInfo.Artist}");
+                EnqueueLocalTier(trackFile, null);
                 return default!;
             }
+
+            EnqueueLocalTier(trackFile, lyric);
 
             EmbedLyrics(lyric, trackFile);
 
@@ -228,6 +231,40 @@ namespace Tubifarry.Metadata.Lyrics
 
             string relativePath = Path.ChangeExtension(artist.Path.GetRelativePath(trackFile.Path), lyricsFile.Value.Extension);
             return new MetadataFileResult(relativePath, lyricsFile.Value.Content);
+        }
+
+        // Hand off to the local fallback tiers (lyrics-local service) when the online
+        // chain couldn't produce the desired sync level. TRULY fire-and-forget: the
+        // enqueue task is started and intentionally not awaited, so the (synchronous)
+        // metadata pipeline never blocks on it — not even for the HTTP timeout if the
+        // service is unreachable. EnqueueAsync swallows its own errors, so the discarded
+        // task can never fault.
+        private void EnqueueLocalTier(TrackFile trackFile, Lyric? lyric)
+        {
+            if (!ActiveSettings.LocalLyricsEnabled)
+                return;
+
+            LocalLyricsClient client = new(_httpClient, _logger, ActiveSettings);
+
+            // Tier 4: no text anywhere -> transcription (labelled low-confidence).
+            if (lyric == null)
+            {
+                if (ActiveSettings.LocalTranscribeEnabled)
+                    _ = client.EnqueueAsync(trackFile.Path, null, "plugin-transcribe");
+                return;
+            }
+
+            // Tier 3: we have text but it isn't synced to the level we wanted -> align it.
+            if (ActiveSettings.LocalAlignEnabled
+                && GetSyncLevel(lyric) == SyncLevel.Plain
+                && GetDesiredSyncLevel() > SyncLevel.Plain)
+            {
+                string plainText = string.Join("\n", lyric.Lines
+                    .Select(l => l.Text)
+                    .Where(t => !string.IsNullOrWhiteSpace(t)));
+                if (!string.IsNullOrWhiteSpace(plainText))
+                    _ = client.EnqueueAsync(trackFile.Path, plainText, "plugin-align");
+            }
         }
 
         private async Task<Lyric?> FetchLyricsAsync(TrackInfo trackInfo)
