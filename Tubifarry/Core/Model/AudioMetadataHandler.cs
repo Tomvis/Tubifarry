@@ -12,6 +12,8 @@ namespace Tubifarry.Core.Model
     {
         private readonly Logger? _logger;
         private static bool? _isFFmpegInstalled = null;
+        private static readonly object _ffmpegCheckLock = new();
+        private static readonly SemaphoreSlim _ffmpegInstallGate = new(1, 1);
 
         public string TrackPath { get; private set; }
         public Lyric? Lyric { get; set; }
@@ -203,7 +205,7 @@ namespace Tubifarry.Core.Model
                 try
                 {
                     IConversion conversion = FFmpeg.Conversions.New()
-                        .AddParameter($"-i \"{TrackPath}\"")
+                        .AddParameter($"-i {TrackPath.Escape()}")
                         .AddParameter("-an -vcodec copy")
                         .SetOutput(tempCoverPath);
 
@@ -222,6 +224,15 @@ namespace Tubifarry.Core.Model
 
             return null;
         }
+
+        /// <summary>
+        /// Creates a base FFmpeg conversion using explicit stream mapping.
+        /// </summary>
+        private static IConversion CreateBaseAudioConversion(string inputPath, string outputPath) =>
+            FFmpeg.Conversions.New()
+                .AddParameter($"-i {inputPath.Escape()}")
+                .AddParameter("-map 0:a:0")
+                .SetOutput(outputPath);
 
         /// <summary>
         /// Converts audio to the specified format with optional bitrate control.
@@ -259,11 +270,14 @@ namespace Tubifarry.Core.Model
 
                 byte[]? preservedCoverArt = AlbumCover?.Length > 0 ? AlbumCover : await TryExtractCoverArtAsync();
 
-                IConversion conversion = await FFmpeg.Conversions.FromSnippet.Convert(TrackPath, tempOutputPath);
-
                 IMediaInfo mediaInfo = await FFmpeg.GetMediaInfo(TrackPath);
-                if (mediaInfo.VideoStreams.Any(vs => CoverArtCodecs.Contains(vs.Codec ?? "")))
+                bool hasCoverArt = mediaInfo.VideoStreams.Any(vs => CoverArtCodecs.Contains(vs.Codec ?? ""));
+
+                IConversion conversion = CreateBaseAudioConversion(TrackPath, tempOutputPath);
+
+                if (hasCoverArt)
                 {
+                    conversion.AddParameter("-map 0:v:0");
                     conversion.AddParameter("-c:v mjpeg -q:v 2 -disposition:v attached_pic");
                     _logger?.Trace("Detected attached picture stream, re-encoding as mjpeg with attached_pic disposition");
                 }
@@ -362,7 +376,7 @@ namespace Tubifarry.Core.Model
                 if (hasRealVideo)
                     return true;
 
-                string probeResult = await Probe.New().Start($"-v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 \"{TrackPath}\"");
+                string probeResult = await Probe.New().Start($"-v error -show_entries format=format_name -of default=noprint_wrappers=1:nokey=1 {TrackPath.Escape()}");
                 string formatName = probeResult?.Trim().ToLower() ?? "";
                 return VideoFormats.Any(container => formatName.Contains(container));
             }
@@ -402,7 +416,7 @@ namespace Tubifarry.Core.Model
                 if (File.Exists(tempOutputPath))
                     File.Delete(tempOutputPath);
 
-                IConversion conversion = await FFmpeg.Conversions.FromSnippet.ExtractAudio(TrackPath, tempOutputPath);
+                IConversion conversion = CreateBaseAudioConversion(TrackPath, tempOutputPath);
                 foreach (string parameter in ExtractionParameters)
                     conversion.AddParameter(parameter);
 
@@ -455,7 +469,7 @@ namespace Tubifarry.Core.Model
 
                 IConversion conversion = FFmpeg.Conversions.New()
                     .AddParameter($"-decryption_key {decryptionKey}")
-                    .AddParameter($"-i \"{TrackPath}\"")
+                    .AddParameter($"-i {TrackPath.Escape()}")
                     .AddParameter("-c copy")
                     .SetOutput(tempOutput);
 
@@ -695,6 +709,19 @@ namespace Tubifarry.Core.Model
             if (_isFFmpegInstalled.HasValue)
                 return _isFFmpegInstalled.Value;
 
+            lock (_ffmpegCheckLock)
+            {
+                if (_isFFmpegInstalled.HasValue)
+                    return _isFFmpegInstalled.Value;
+
+                bool isInstalled = DetectFFmpegInstallation();
+                _isFFmpegInstalled = isInstalled;
+                return isInstalled;
+            }
+        }
+
+        private static bool DetectFFmpegInstallation()
+        {
             bool isInstalled = false;
 
             if (!string.IsNullOrEmpty(FFmpeg.ExecutablesPath) && Directory.Exists(FFmpeg.ExecutablesPath))
@@ -747,7 +774,6 @@ namespace Tubifarry.Core.Model
             if (!isInstalled)
                 NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace("FFmpeg not found in configured path or system PATH");
 
-            _isFFmpegInstalled = isInstalled;
             return isInstalled;
         }
 
@@ -783,14 +809,40 @@ namespace Tubifarry.Core.Model
             return false;
         }
 
-        public static void ResetFFmpegInstallationCheck() => _isFFmpegInstalled = null;
+        public static void ResetFFmpegInstallationCheck()
+        {
+            lock (_ffmpegCheckLock)
+                _isFFmpegInstalled = null;
+        }
 
         public static Task InstallFFmpeg(string path)
         {
-            NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler)).Trace($"Installing FFmpeg to: {path}");
-            ResetFFmpegInstallationCheck();
-            FFmpeg.SetExecutablesPath(path);
-            return CheckFFmpegInstalled() ? Task.CompletedTask : FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, path);
+            Logger logger = NzbDroneLogger.GetLogger(typeof(AudioMetadataHandler));
+
+            _ffmpegInstallGate.Wait();
+            try
+            {
+                FFmpeg.SetExecutablesPath(path);
+
+                ResetFFmpegInstallationCheck();
+                if (CheckFFmpegInstalled())
+                    return Task.CompletedTask;
+
+                logger.Trace("Installing FFmpeg to: {0}", path);
+                FFmpegDownloader.GetLatestVersion(FFmpegVersion.Official, path).GetAwaiter().GetResult();
+
+                ResetFFmpegInstallationCheck();
+                return Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                logger.Error(ex, "FFmpeg installation failed");
+                return Task.FromException(ex);
+            }
+            finally
+            {
+                _ffmpegInstallGate.Release();
+            }
         }
     }
 }
