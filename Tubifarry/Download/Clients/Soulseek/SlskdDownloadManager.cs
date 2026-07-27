@@ -2,6 +2,7 @@ using NLog;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
+using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
@@ -77,8 +78,24 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             string username = ExtractUsernameFromPath(remoteAlbum.Release.DownloadUrl);
             List<(string Filename, long Size)> files = ParseFilesFromSource(remoteAlbum.Release.Source);
+            string? destination = GetMultiDiscDestination(files.Select(f => f.Filename));
 
-            await _apiClient.EnqueueDownloadAsync(settings, username, files);
+            string? sourceLeaf = destination ?? GetSingleParentLeaf(files.Select(f => f.Filename));
+            if (sourceLeaf != null && GetArtistPrefixedName(sourceLeaf, remoteAlbum.Release.Artist) is string prefixed)
+                destination = prefixed;
+
+            SlskdEnqueueResult result = await _apiClient.EnqueueDownloadAsync(settings, username, files, externalId: item.ID, destination: destination);
+
+            if (result.AllFailed)
+                throw new DownloadClientException(
+                    $"All {result.Failed.Count} files failed to enqueue: {string.Join("; ", result.Failed.Select(f => $"{Path.GetFileName(f.Filename)}: {f.Message}"))}");
+
+            if (result.Failed.Count > 0)
+                _logger.Warn($"{result.Failed.Count} of {files.Count} files failed to enqueue for {username}: {string.Join("; ", result.Failed.Select(f => f.Message).Distinct())}");
+
+            item.BatchId = result.BatchId;
+            if (destination != null && result.BatchId != null)
+                item.DerivedSubdirectory = destination;
             item.Username = username;
             SubscribeStateChanges(item, definitionId);
             AddItem(definitionId, item);
@@ -153,12 +170,13 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             return;
 
         string? directory = item.SlskdDownloadDirectory?.Directory;
+        string localPath = GetLocalFolderPath(item, settings);
 
         _ = RemoveItemFilesAsync(item, settings);
         RemoveItemFromDict(definitionId, clientItem.DownloadId);
 
         if (settings.CleanStaleDirectories && !string.IsNullOrEmpty(directory))
-            _ = CleanStaleDirectoriesAsync(directory, settings);
+            _ = CleanStaleDirectoriesAsync(directory, localPath, settings);
     }
 
     private async Task RefreshAsync(int definitionId, SlskdProviderSettings settings)
@@ -188,6 +206,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private async Task PollTransfersAsync(int definitionId, SlskdProviderSettings settings, HashSet<string> activeUsernames)
     {
         ConcurrentDictionary<string, bool> currentIdSet = new();
+        SlskdDestinationConfig? destinationConfig = settings.GetDestinationConfig();
 
         if (!settings.Inclusive && activeUsernames.Count > 0)
         {
@@ -195,14 +214,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             {
                 SlskdUserTransfers? userTransfers = await _apiClient.GetUserTransfersAsync(settings, username);
                 if (userTransfers != null)
-                    ProcessUserTransfers(definitionId, settings, userTransfers, currentIdSet);
+                    ProcessUserTransfers(definitionId, settings, userTransfers, currentIdSet, destinationConfig);
             }));
         }
         else
         {
             List<SlskdUserTransfers> all = await _apiClient.GetAllTransfersAsync(settings);
             foreach (SlskdUserTransfers user in all)
-                ProcessUserTransfers(definitionId, settings, user, currentIdSet);
+                ProcessUserTransfers(definitionId, settings, user, currentIdSet, destinationConfig);
         }
 
         _logger.Debug($"[def={definitionId}] Polled {activeUsernames.Count} users | Tracked: {currentIdSet.Count}");
@@ -223,14 +242,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         int definitionId,
         SlskdProviderSettings settings,
         SlskdUserTransfers userTransfers,
-        ConcurrentDictionary<string, bool> currentIdSet)
+        ConcurrentDictionary<string, bool> currentIdSet,
+        SlskdDestinationConfig? destinationConfig)
     {
         foreach (SlskdDownloadDirectory dir in userTransfers.Directories)
         {
             string hash = SlskdDownloadItem.GetStableMD5Id(dir.Files?.Select(f => f.Filename) ?? []);
             currentIdSet.TryAdd(hash, true);
 
-            SlskdDownloadItem? item = GetItem(definitionId, hash);
+            SlskdDownloadItem? item = GetItem(definitionId, hash) ?? FindItemContainingFiles(definitionId, userTransfers.Username, dir);
             if (item == null)
             {
                 _logger.Trace($"[def={definitionId}] Unknown item {hash}: checking history");
@@ -248,9 +268,79 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 AddItem(definitionId, item);
             }
 
+            currentIdSet.TryAdd(item.ID, true);
             item.Username ??= userTransfers.Username;
             item.SlskdDownloadDirectory = dir;
+
+            if (item.DerivedSubdirectory == null && destinationConfig?.UsesDefaultPattern == false &&
+                dir.Files?.FirstOrDefault()?.Filename is { Length: > 0 } firstFile)
+            {
+                item.DerivedSubdirectory = SlskdPathResolver.ResolveSubdirectory(
+                    destinationConfig,
+                    userTransfers.Username,
+                    firstFile,
+                    item.BatchId,
+                    item.BatchId != null ? item.ID : null);
+            }
+
+            MergeSplitDiscFolders(item, settings);
+            NormalizeAlbumFolderName(item, settings);
         }
+    }
+
+    private void MergeSplitDiscFolders(SlskdDownloadItem item, SlskdProviderSettings settings)
+    {
+        if (item.BatchId != null || item.DiscMergeScheduled || item.FileStates.Count == 0 ||
+            item.FileStates.Values.Any(fs => fs.GetStatus() != DownloadItemStatus.Completed))
+            return;
+
+        List<string> parents = item.FileData
+            .Select(f => f.Filename.Replace('/', '\\'))
+            .Select(f => f.LastIndexOf('\\') is int i && i > 0 ? f[..i] : null)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (parents.Count < 2)
+            return;
+
+        HashSet<string> albums = parents.Select(SlskdTextProcessor.GetMergedDirectoryKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (albums.Count != 1 || albums.SetEquals(parents))
+            return;
+
+        item.DiscMergeScheduled = true;
+        string album = albums.Single().Split('\\', '/').Last();
+        OsPath root = _remotePathMappingService.RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath));
+        OsPath albumPath = root + new OsPath(album);
+
+        item.PostProcessTasks.Add(Task.Run(() =>
+        {
+            try
+            {
+                if (!_diskProvider.FolderExists(albumPath.FullPath))
+                    _diskProvider.CreateFolder(albumPath.FullPath);
+
+                foreach (string leaf in parents.Select(p => p.Split('\\', '/').Last()).Distinct(StringComparer.OrdinalIgnoreCase).Where(l => !l.Equals(album, StringComparison.OrdinalIgnoreCase)))
+                {
+                    OsPath discPath = root + new OsPath(leaf);
+                    if (!_diskProvider.FolderExists(discPath.FullPath))
+                        continue;
+                    foreach (string file in _diskProvider.GetFiles(discPath.FullPath, true))
+                    {
+                        OsPath target = albumPath + new OsPath(Path.GetFileName(file));
+                        if (!_diskProvider.FileExists(target.FullPath))
+                            _diskProvider.MoveFile(file, target.FullPath);
+                    }
+                    if (_diskProvider.FolderEmpty(discPath.FullPath))
+                        _diskProvider.DeleteFolder(discPath.FullPath, true);
+                }
+                item.ConfirmedSubdirectory = album;
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Disc merge failed for {item.ID}; leaving files in place");
+            }
+        }));
     }
 
     private async Task PollEventsAsync(int definitionId, SlskdProviderSettings settings, int offset)
@@ -284,6 +374,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             using JsonDocument doc = JsonDocument.Parse(record.Data);
             string remoteDir = doc.RootElement.TryGetProperty("remoteDirectoryName", out JsonElement rdn) ? rdn.GetString() ?? "" : "";
             string username = doc.RootElement.TryGetProperty("username", out JsonElement un) ? un.GetString() ?? "" : "";
+            string? localDir = doc.RootElement.TryGetProperty("localDirectoryName", out JsonElement ldn) ? ldn.GetString() : null;
 
             SlskdDownloadItem? item = GetItemsForDef(definitionId)
                 .FirstOrDefault(i => i.Username == username &&
@@ -291,10 +382,14 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             if (item != null)
             {
-                _logger.Trace($"[def={definitionId}] Event DownloadDirectoryComplete: {remoteDir} by {username}: forcing refresh");
+                item.ConfirmedSubdirectory = SlskdPathResolver.MakeRelativeToDownloads(settings.DownloadPath, localDir)
+                    ?? item.ConfirmedSubdirectory;
+
+                _logger.Trace($"[def={definitionId}] Event DownloadDirectoryComplete: {remoteDir} by {username} -> {item.ConfirmedSubdirectory ?? "<unresolved>"}");
+
                 SlskdUserTransfers? userTransfers = await _apiClient.GetUserTransfersAsync(settings, username);
                 if (userTransfers != null)
-                    ProcessUserTransfers(definitionId, settings, userTransfers, new ConcurrentDictionary<string, bool>());
+                    ProcessUserTransfers(definitionId, settings, userTransfers, new ConcurrentDictionary<string, bool>(), settings.GetDestinationConfig());
             }
         }
         else if (record.Type == SlskdEventTypes.DownloadFileComplete && _logger.IsTraceEnabled)
@@ -359,15 +454,8 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             try
             {
-                string relativePath = file.Filename;
-                if (relativePath.StartsWith(settings.DownloadPath, StringComparison.OrdinalIgnoreCase))
-                {
-                    relativePath = relativePath.Substring(settings.DownloadPath.Length).TrimStart('/', '\\');
-                }
-
-                string localFilePath = _remotePathMappingService
-                    .RemapRemoteToLocal(settings.Host, new OsPath(Path.Combine(settings.DownloadPath, relativePath)))
-                    .FullPath;
+                string fileName = Path.GetFileName(file.Filename.Replace('\\', '/'));
+                string localFilePath = Path.Combine(GetLocalFolderPath(item, settings), fileName);
 
                 if (_diskProvider.FileExists(localFilePath))
                 {
@@ -388,14 +476,120 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         }));
     }
 
-    private async Task CleanStaleDirectoriesAsync(string directoryPath, SlskdProviderSettings settings)
+    private static string? GetSingleParentLeaf(IEnumerable<string> filenames)
+    {
+        List<string> parents = filenames
+            .Select(f => { int i = f.Replace('/', '\\').LastIndexOf('\\'); return i > 0 ? f.Replace('/', '\\')[..i] : null; })
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return parents.Count == 1 ? parents[0].Split('\\').Last() : null;
+    }
+
+    private static string? GetArtistPrefixedName(string leaf, string? artist)
+    {
+        if (string.IsNullOrWhiteSpace(artist) || string.IsNullOrWhiteSpace(leaf))
+            return null;
+
+        static string Normalize(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
+
+        string normLeaf = Normalize(leaf);
+        string normArtist = Normalize(artist);
+        if (normArtist.Length < 3 || normLeaf.Contains(normArtist))
+            return null;
+
+        string sanitizedArtist = string.Concat(artist.Split(Path.GetInvalidFileNameChars())).Trim();
+        return sanitizedArtist.Length == 0 ? null : $"{sanitizedArtist} - {leaf}";
+    }
+
+    private void NormalizeAlbumFolderName(SlskdDownloadItem item, SlskdProviderSettings settings)
+    {
+        if (item.BatchId != null || item.DiscMergeScheduled || item.FolderRenameScheduled ||
+            item.ConfirmedSubdirectory != null || item.DerivedSubdirectory != null ||
+            item.FileStates.Count == 0 ||
+            item.FileStates.Values.Any(fs => fs.GetStatus() != DownloadItemStatus.Completed))
+            return;
+
+        string? leaf = item.SlskdDownloadDirectory?.Directory?
+            .Replace('/', '\\').TrimEnd('\\').Split('\\').LastOrDefault();
+        if (string.IsNullOrEmpty(leaf))
+            return;
+
+        string? renamed = GetArtistPrefixedName(leaf, item.ReleaseInfo.Artist);
+        if (renamed == null)
+            return;
+
+        item.FolderRenameScheduled = true;
+        OsPath root = _remotePathMappingService.RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath));
+        OsPath source = root + new OsPath(leaf);
+        OsPath target = root + new OsPath(renamed);
+
+        item.PostProcessTasks.Add(Task.Run(() =>
+        {
+            try
+            {
+                if (!_diskProvider.FolderExists(source.FullPath) || _diskProvider.FolderExists(target.FullPath))
+                    return;
+                _diskProvider.MoveFolder(source.FullPath, target.FullPath);
+                item.ConfirmedSubdirectory = renamed;
+                _logger.Debug($"Normalized download folder: '{leaf}' -> '{renamed}'");
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, $"Folder normalization failed for {item.ID}; leaving folder in place");
+            }
+        }));
+    }
+
+    private static string? GetMultiDiscDestination(IEnumerable<string> filenames)
+    {
+        HashSet<string> parents = filenames
+            .Select(f => { int i = f.LastIndexOf('\\'); return i > 0 ? f[..i] : null; })
+            .OfType<string>()
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (parents.Count < 2)
+            return null;
+
+        HashSet<string> merged = parents
+            .Select(SlskdTextProcessor.GetMergedDirectoryKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if (merged.Count != 1)
+            return null;
+
+        string parent = merged.Single();
+        int index = parent.LastIndexOfAny(['\\', '/']);
+        string name = index >= 0 ? parent[(index + 1)..] : parent;
+
+        foreach (char c in Path.GetInvalidFileNameChars())
+            name = name.Replace(c, '_');
+
+        return string.IsNullOrWhiteSpace(name) ? null : name;
+    }
+
+    private SlskdDownloadItem? FindItemContainingFiles(int definitionId, string username, SlskdDownloadDirectory dir)
+    {
+        List<string> filenames = dir.Files?.Select(f => f.Filename).OfType<string>().ToList() ?? [];
+        if (filenames.Count == 0)
+            return null;
+
+        return GetItemsForDef(definitionId).FirstOrDefault(item =>
+            (item.Username == null || string.Equals(item.Username, username, StringComparison.OrdinalIgnoreCase)) &&
+            item.FileData.Count >= filenames.Count &&
+            filenames.All(f => item.FileData.Any(d => string.Equals(d.Filename, f, StringComparison.OrdinalIgnoreCase))));
+    }
+
+    private string GetLocalFolderPath(SlskdDownloadItem item, SlskdProviderSettings settings) =>
+        _remotePathMappingService
+            .RemapRemoteToLocal(settings.Host, item.GetFullFolderPath(new OsPath(settings.DownloadPath)))
+            .FullPath;
+
+    private async Task CleanStaleDirectoriesAsync(string directoryPath, string localPath, SlskdProviderSettings settings)
     {
         try
         {
-            string localPath = _remotePathMappingService
-                .RemapRemoteToLocal(settings.Host, new OsPath(Path.Combine(settings.DownloadPath, directoryPath)))
-                .FullPath;
-
             await Task.Delay(1000);
 
             List<SlskdUserTransfers> all = await _apiClient.GetAllTransfersAsync(settings);
