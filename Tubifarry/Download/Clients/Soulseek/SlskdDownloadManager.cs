@@ -400,8 +400,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
 
             if (item != null)
             {
-                item.ConfirmedSubdirectory = SlskdPathResolver.MakeRelativeToDownloads(settings.DownloadPath, localDir)
-                    ?? item.ConfirmedSubdirectory;
+                item.ConfirmedSubdirectory ??= SlskdPathResolver.MakeRelativeToDownloads(settings.DownloadPath, localDir);
 
                 _logger.Trace($"[def={definitionId}] Event DownloadDirectoryComplete: {remoteDir} by {username} -> {item.ConfirmedSubdirectory ?? "<unresolved>"}");
 
@@ -586,8 +585,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             try
             {
-                if (!_diskProvider.FolderExists(source.FullPath) || _diskProvider.FolderExists(target.FullPath))
+                if (_diskProvider.FolderExists(target.FullPath) && _diskProvider.GetFiles(target.FullPath, false).Any())
+                {
+                    item.ConfirmedSubdirectory = renamed;
                     return;
+                }
+
+                if (!_diskProvider.FolderExists(source.FullPath))
+                    return;
+
                 _diskProvider.MoveFolder(source.FullPath, target.FullPath);
                 item.ConfirmedSubdirectory = renamed;
                 _logger.Debug($"Normalized download folder: '{leaf}' -> '{renamed}'");
@@ -720,7 +726,15 @@ public class SlskdDownloadManager : ISlskdDownloadManager
                 _diskProvider.DeleteFolder(localPath, true);
 
                 string? parent = Path.GetDirectoryName(localPath);
-                if (!string.IsNullOrEmpty(parent) && _diskProvider.FolderExists(parent) && _diskProvider.FolderEmpty(parent))
+                string downloadRoot = _remotePathMappingService
+                    .RemapRemoteToLocal(settings.Host, new OsPath(settings.DownloadPath))
+                    .FullPath;
+
+                if (!string.IsNullOrEmpty(parent)
+                    && _diskProvider.FolderExists(parent)
+                    && _diskProvider.FolderEmpty(parent)
+                    && !parent.Equals(downloadRoot, StringComparison.OrdinalIgnoreCase)
+                    && !parent.Equals(downloadRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.Info($"Removing empty parent directory: {parent}");
                     _diskProvider.DeleteFolder(parent, true);
