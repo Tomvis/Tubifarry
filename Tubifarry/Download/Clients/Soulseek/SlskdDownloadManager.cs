@@ -585,14 +585,35 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         {
             try
             {
-                if (_diskProvider.FolderExists(target.FullPath) && _diskProvider.GetFiles(target.FullPath, false).Any())
+                if (_diskProvider.FolderExists(target.FullPath))
                 {
-                    item.ConfirmedSubdirectory = renamed;
+                    // Adopt the existing folder when it already holds content. The check is
+                    // recursive: a multi-disc release keeps its audio in per-disc subfolders,
+                    // so a non-recursive look finds nothing and would fall through to the
+                    // move below.
+                    if (_diskProvider.GetFiles(target.FullPath, true).Any())
+                    {
+                        item.ConfirmedSubdirectory = renamed;
+                        return;
+                    }
+
+                    if (!_diskProvider.FolderExists(source.FullPath))
+                    {
+                        item.ConfirmedSubdirectory = renamed;
+                        return;
+                    }
+
+                    // Target exists but is empty - the residue of an earlier interrupted
+                    // normalization. MoveFolder throws if the destination exists at all
+                    // ("Cannot create '<target>' because a file or directory with the same
+                    // name already exists"), which aborted normalization on every retry, so
+                    // clear the placeholder before moving.
+                    _diskProvider.DeleteFolder(target.FullPath, true);
+                }
+                else if (!_diskProvider.FolderExists(source.FullPath))
+                {
                     return;
                 }
-
-                if (!_diskProvider.FolderExists(source.FullPath))
-                    return;
 
                 _diskProvider.MoveFolder(source.FullPath, target.FullPath);
                 item.ConfirmedSubdirectory = renamed;
