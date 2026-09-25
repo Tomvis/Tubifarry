@@ -861,7 +861,7 @@ ssh root@truenas -i ~/.ssh/id_ed25519 "docker exec media-server-lidarr-1 sh -c '
 Preferred: in Lidarr UI → System → Plugins → install `https://github.com/Tomvis/Tubifarry`, which lands under `/config/plugins/Tomvis/Tubifarry`. Remove/disable the old `TypNull/Tubifarry` so only one Tubifarry loads. Restart Lidarr.
 Verify it loaded as YOUR plugin (not masquerading):
 ```bash
-ssh root@truenas -i ~/.ssh/id_ed25519 "docker exec media-server-lidarr-1 sh -c 'curl -s -H \"X-Api-Key: 1138bd7230494e58b1bda693c8bac59a\" http://localhost/api/v1/system/plugins' " 2>/dev/null
+ssh root@truenas -i ~/.ssh/id_ed25519 "docker exec media-server-lidarr-1 sh -c 'curl -s -H \"X-Api-Key: <LIDARR_API_KEY>\" http://localhost/api/v1/system/plugins' " 2>/dev/null
 ```
 Expected: a Tubifarry entry with owner `Tomvis`.
 
@@ -869,7 +869,7 @@ Expected: a Tubifarry entry with owner `Tomvis`.
 
 Pick a known-mediocre album (e.g. one of the sub-1000px ones). Refresh it via the UI (album → Refresh) or API, then check the written `folder.jpg` resolution on disk:
 ```bash
-ssh root@truenas -i ~/.ssh/id_ed25519 "docker exec media-server-lidarr-1 sh -c 'curl -s -H \"X-Api-Key: 1138bd7230494e58b1bda693c8bac59a\" -X POST http://localhost/api/v1/command -d \"{\\\"name\\\":\\\"RefreshAlbum\\\",\\\"albumId\\\":<ID>}\" -H \"Content-Type: application/json\"'"
+ssh root@truenas -i ~/.ssh/id_ed25519 "docker exec media-server-lidarr-1 sh -c 'curl -s -H \"X-Api-Key: <LIDARR_API_KEY>\" -X POST http://localhost/api/v1/command -d \"{\\\"name\\\":\\\"RefreshAlbum\\\",\\\"albumId\\\":<ID>}\" -H \"Content-Type: application/json\"'"
 # then, after it completes, measure the new folder.jpg via the navidrome container's ffprobe:
 ssh root@truenas -i ~/.ssh/id_ed25519 "docker exec media-server-navidrome-1 sh -c 'ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x \"/data/media/music/<artist>/<album>/folder.jpg\"'"
 ```
