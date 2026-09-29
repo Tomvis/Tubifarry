@@ -137,6 +137,10 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Deezer
                     .AddQueryParam("limit", itemsPerPage.ToString(), true);
                 JsonElement response = await ExecuteRequestWithRetryAsync(pagedRequest);
 
+                // An error or skipped request returns default(JsonElement); TryGetProperty throws on it.
+                if (response.ValueKind != JsonValueKind.Object)
+                    break;
+
                 if (response.TryGetProperty("data", out JsonElement dataElement))
                 {
                     List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(dataElement.GetRawText());

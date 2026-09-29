@@ -220,6 +220,10 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Discogs
                     .AddQueryParam("per_page", itemsPerPage.ToString(), true);
                 JsonElement response = await ExecuteRequestWithRetryAsync(pagedRequest);
 
+                // An error or skipped request returns default(JsonElement); TryGetProperty throws on it.
+                if (response.ValueKind != JsonValueKind.Object)
+                    break;
+
                 if (response.TryGetProperty("results", out JsonElement resultsElement) || response.TryGetProperty("releases", out resultsElement))
                 {
                     List<T>? pageResults = JsonSerializer.Deserialize<List<T>>(resultsElement.GetRawText());
