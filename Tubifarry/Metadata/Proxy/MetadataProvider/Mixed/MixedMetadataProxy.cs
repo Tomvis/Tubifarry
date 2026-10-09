@@ -434,7 +434,7 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
 
         private void TryUpgradeCover(Album? album)
         {
-            MixedMetadataProxySettings? settings = MixedMetadataProxySettings.Instance;
+            MixedMetadataProxySettings settings = ActiveSettings;
             if (album == null || settings is not { EnableHighResCovers: true })
                 return;
             try
