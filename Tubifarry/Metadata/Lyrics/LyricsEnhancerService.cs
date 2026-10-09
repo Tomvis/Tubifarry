@@ -2,6 +2,7 @@ using NLog;
 using System.Text.RegularExpressions;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
+using LidarrHttp = NzbDrone.Common.Http;
 using NzbDrone.Common.Instrumentation.Extensions;
 using NzbDrone.Core.Datastore;
 using NzbDrone.Core.Extras.Files;
@@ -20,16 +21,20 @@ namespace Tubifarry.Metadata.Lyrics
     public interface ILyricsEnhancerService
     {
         void Execute(LyricsUpdateCommand message, LyricsEnhancerSettings settings);
-        MetadataFileResult TrackMetadata(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings);
+        MetadataFileResult? TrackMetadata(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings);
         string GetFilenameAfterMove(Artist artist, TrackFile trackFile, MetadataFile metadataFile);
     }
 
     public class LyricsEnhancerService : ILyricsEnhancerService
     {
         private const int SqlBatchSize = 500;
+        private static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(20);
+        private static readonly TimeSpan GeniusTimeout = TimeSpan.FromMinutes(2);
+        private static readonly TimeSpan DelayBetweenTracks = TimeSpan.FromMilliseconds(250);
 
         private readonly Logger _logger;
         private readonly HttpClient _httpClient;
+        private readonly LidarrHttp.IHttpClient _pageClient;
         private readonly IRootFolderWatchingService _rootFolderWatchingService;
         private readonly IArtistService _artistService;
         private readonly IDiskProvider _diskProvider;
@@ -38,6 +43,7 @@ namespace Tubifarry.Metadata.Lyrics
 
         public LyricsEnhancerService(
             HttpClient httpClient,
+            LidarrHttp.IHttpClient pageClient,
             Logger logger,
             IRootFolderWatchingService rootFolderWatchingService,
             ILyricFileService lyricFileService,
@@ -52,6 +58,7 @@ namespace Tubifarry.Metadata.Lyrics
         {
             _logger = logger;
             _httpClient = httpClient;
+            _pageClient = pageClient;
             _rootFolderWatchingService = rootFolderWatchingService;
             _artistService = artistService;
             _diskProvider = diskProvider;
@@ -70,29 +77,30 @@ namespace Tubifarry.Metadata.Lyrics
 
             try
             {
-                LyricsProviderManager providers = new(_httpClient, _logger, settings);
+                LyricsProviderManager providers = new(_httpClient, _pageClient, _logger, settings);
                 _logger.ProgressInfo("Starting scheduled lyrics update");
 
-                int totalTracks = _trackFileRepositoryHelper.GetTracksWithoutLrcFilesCount();
-                if (totalTracks == 0)
-                {
-                    _logger.Info("All tracks in database have lyric file entries");
-                    message.SetCompletionMessage("All tracks have lyrics entries");
-                    return;
-                }
-
-                _logger.Debug($"Found {totalTracks} tracks without lyric entries in database");
-
                 ProcessingResult total = new();
+                int processed = 0;
+                int lastId = 0;
 
-                for (int offset = 0; offset < totalTracks; offset += SqlBatchSize)
+                while (true)
                 {
-                    List<TrackFile> batch = _trackFileRepositoryHelper.GetTracksWithoutLrcFilesBatch(offset, SqlBatchSize);
+                    List<TrackFile> batch = _trackFileRepositoryHelper.GetTracksWithoutLrcFilesBatch(lastId, SqlBatchSize);
                     if (batch.Count == 0)
                         break;
 
                     total.Add(ProcessTrackBatch(batch, settings, providers));
-                    _logger.Debug($"Progress: {Math.Min(offset + batch.Count, totalTracks)}/{totalTracks} tracks without lyrics processed");
+                    processed += batch.Count;
+                    lastId = batch.Max(trackFile => trackFile.Id);
+                    _logger.Debug($"Progress: {processed} tracks without lyrics processed");
+                }
+
+                if (processed == 0)
+                {
+                    _logger.Info("All tracks in database have lyric file entries");
+                    message.SetCompletionMessage("All tracks have lyrics entries");
+                    return;
                 }
 
                 string completionMsg = $"Lyrics update completed: {total.Created} created, {total.Synced} synced, {total.Failed} not found.";
@@ -106,8 +114,8 @@ namespace Tubifarry.Metadata.Lyrics
             }
         }
 
-        public MetadataFileResult TrackMetadata(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings) =>
-            TrackMetadata(artist, trackFile, settings, new LyricsProviderManager(_httpClient, _logger, settings));
+        public MetadataFileResult? TrackMetadata(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings) =>
+            TrackMetadata(artist, trackFile, settings, new LyricsProviderManager(_httpClient, _pageClient, _logger, settings));
 
         public string GetFilenameAfterMove(Artist artist, TrackFile trackFile, MetadataFile metadataFile)
         {
@@ -149,6 +157,7 @@ namespace Tubifarry.Metadata.Lyrics
                     _logger.ProgressTrace($"Searching lyrics for: {trackFile.Tracks?.Value?.FirstOrDefault()?.Title ?? Path.GetFileName(trackFile.Path)}");
 
                     MetadataFileResult? metadataResult = TrackMetadata(artist, trackFile, settings, providers);
+                    Thread.Sleep(DelayBetweenTracks);
                     if (metadataResult != null && !string.IsNullOrEmpty(metadataResult.Contents))
                     {
                         _diskProvider.WriteAllText(Path.Combine(artist.Path, metadataResult.RelativePath), metadataResult.Contents);
@@ -177,18 +186,18 @@ namespace Tubifarry.Metadata.Lyrics
             _logger.Trace($"Registered lyric file in database: {relativePath}");
         }
 
-        private MetadataFileResult TrackMetadata(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings, LyricsProviderManager providers)
+        private MetadataFileResult? TrackMetadata(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings, LyricsProviderManager providers)
         {
             if (!settings.OverwriteExistingLrcFiles && LyricsHelper.LyricFileExistsOnDisk(trackFile.Path, _diskProvider))
             {
                 _logger.Trace($"Lyric file already exists and overwrite is disabled: {trackFile.Path}");
-                return default!;
+                return null;
             }
 
             if (!_diskProvider.FileExists(trackFile.Path))
             {
                 _logger.Warn($"Track file does not exist: {trackFile.Path}");
-                return default!;
+                return null;
             }
 
             try
@@ -198,22 +207,22 @@ namespace Tubifarry.Metadata.Lyrics
             catch (Exception ex)
             {
                 _logger.Error(ex, $"Error processing lyrics for track: {trackFile.Path}");
-                return default!;
+                return null;
             }
         }
 
-        private async Task<MetadataFileResult> ProcessTrackLyricsAsync(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings, LyricsProviderManager providers)
+        private async Task<MetadataFileResult?> ProcessTrackLyricsAsync(Artist artist, TrackFile trackFile, LyricsEnhancerSettings settings, LyricsProviderManager providers)
         {
             TrackInfo? trackInfo = LyricsHelper.ExtractTrackInfo(trackFile, artist, _logger);
             if (trackInfo == null)
-                return default!;
+                return null;
 
             Lyric? lyric = await FetchLyricsAsync(trackInfo, settings, providers);
             if (lyric == null)
             {
                 _logger.Trace($"No lyrics found for track: {trackInfo.Title} by {trackInfo.Artist}");
                 EnqueueLocalTier(trackFile, null, settings);
-                return default!;
+                return null;
             }
 
             EnqueueLocalTier(trackFile, lyric, settings);
@@ -222,7 +231,7 @@ namespace Tubifarry.Metadata.Lyrics
 
             (string Content, string Extension)? lyricsFile = CreateLyricsFile(lyric, trackInfo, settings);
             if (lyricsFile == null)
-                return default!;
+                return null;
 
             string relativePath = Path.ChangeExtension(artist.Path.GetRelativePath(trackFile.Path), lyricsFile.Value.Extension);
             return new MetadataFileResult(relativePath, lyricsFile.Value.Content);
@@ -267,18 +276,24 @@ namespace Tubifarry.Metadata.Lyrics
             SyncLevel desiredLevel = GetDesiredSyncLevel(settings);
             Lyric? bestSoFar = null;
 
-            foreach ((bool Enabled, Func<Task<Lyric?>> Fetch, string Name) provider in EnumerateProviders(trackInfo, settings, providers))
+            foreach ((bool Enabled, Func<CancellationToken, Task<Lyric?>> Fetch, string Name, TimeSpan Timeout) provider in EnumerateProviders(trackInfo, settings, providers))
             {
                 if (!provider.Enabled)
                     continue;
 
-                Lyric? lyric = await provider.Fetch();
+                Lyric? lyric = await FetchWithTimeoutAsync(provider.Fetch, provider.Name, provider.Timeout, trackInfo);
                 if (lyric == null)
                     continue;
 
                 if (!IsAcceptableLyric(lyric))
                 {
                     _logger.Trace($"{provider.Name} returned a stub/credits-only lyric ({CountRealLyricLines(lyric)} real lines), skipping");
+                    continue;
+                }
+
+                if (!LyricsHelper.IsMatch(lyric, trackInfo.Artist, trackInfo.Title, trackInfo.DurationSeconds))
+                {
+                    _logger.Debug($"Ignoring {provider.Name} lyrics for '{lyric.Title}' by '{lyric.Artist}' ({lyric.Duration}s), they do not match '{trackInfo.Title}' by '{trackInfo.Artist}' ({trackInfo.DurationSeconds}s)");
                     continue;
                 }
 
@@ -302,24 +317,38 @@ namespace Tubifarry.Metadata.Lyrics
             return bestSoFar;
         }
 
-        private static IEnumerable<(bool Enabled, Func<Task<Lyric?>> Fetch, string Name)> EnumerateProviders(TrackInfo track, LyricsEnhancerSettings settings, LyricsProviderManager providers)
+        private async Task<Lyric?> FetchWithTimeoutAsync(Func<CancellationToken, Task<Lyric?>> fetch, string providerName, TimeSpan limit, TrackInfo trackInfo)
+        {
+            using CancellationTokenSource timeout = new(limit);
+            try
+            {
+                return await fetch(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.Debug($"{providerName} did not answer in time for '{trackInfo.Title}' by '{trackInfo.Artist}'");
+                return null;
+            }
+        }
+
+        private static IEnumerable<(bool Enabled, Func<CancellationToken, Task<Lyric?>> Fetch, string Name, TimeSpan Timeout)> EnumerateProviders(TrackInfo track, LyricsEnhancerSettings settings, LyricsProviderManager providers)
         {
             yield return (settings.LrcLibEnabled,
-                () => providers.FetchFromLrcLibAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "LRCLIB");
+                token => providers.FetchFromLrcLibAsync(track.Artist, track.Title, track.Album, track.DurationSeconds, token), "LRCLIB", ProviderTimeout);
             yield return (settings.BinimumEnabled,
-                () => providers.FetchFromBinimumAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "Binimum");
+                token => providers.FetchFromBinimumAsync(track.Artist, track.Title, track.Album, track.DurationSeconds, token), "Binimum", ProviderTimeout);
             yield return (settings.LyricsPlusEnabled,
-                () => providers.FetchFromLyricsPlusAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "LyricsPlus");
-            yield return (settings.NetEaseEnabled,
-                () => providers.FetchFromNetEaseAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "NetEase");
+                token => providers.FetchFromLyricsPlusAsync(track.Artist, track.Title, track.Album, track.DurationSeconds, token), "LyricsPlus", ProviderTimeout);
             yield return (settings.UnisonEnabled,
-                () => providers.FetchFromUnisonAsync(track.Artist, track.Title, track.Album, track.DurationSeconds), "Unison");
+                token => providers.FetchFromUnisonAsync(track.Artist, track.Title, track.Album, track.DurationSeconds, token), "Unison", ProviderTimeout);
+            yield return (settings.NetEaseEnabled,
+                token => providers.FetchFromNetEaseAsync(track.Artist, track.Title, track.DurationSeconds, token), "NetEase", ProviderTimeout);
             yield return (settings.DarkLyricsEnabled,
-                () => providers.FetchFromDarkLyricsAsync(track.Artist, track.Title, track.Album), "DarkLyrics");
+                _ => providers.FetchFromDarkLyricsAsync(track.Artist, track.Title, track.Album), "DarkLyrics", ProviderTimeout);
             yield return (settings.MetalArchivesEnabled && !string.IsNullOrWhiteSpace(settings.FlareSolverrUrl),
-                () => providers.FetchFromMetalArchivesAsync(track.Artist, track.Title, track.Album), "MetalArchives");
+                _ => providers.FetchFromMetalArchivesAsync(track.Artist, track.Title, track.Album), "MetalArchives", ProviderTimeout);
             yield return (settings.GeniusEnabled && !string.IsNullOrWhiteSpace(settings.GeniusApiKey),
-                () => providers.FetchFromGeniusAsync(track.Artist, track.Title), "Genius");
+                token => providers.FetchFromGeniusAsync(track.Artist, track.Title, token), "Genius", GeniusTimeout);
         }
 
         private void EmbedLyrics(Lyric lyric, TrackFile trackFile, LyricsEnhancerSettings settings)

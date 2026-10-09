@@ -22,11 +22,6 @@ namespace Tubifarry.Indexers.Soulseek
                 .Must(url => string.IsNullOrEmpty(url) || (Uri.IsWellFormedUriString(url, UriKind.Absolute) && !url.EndsWith('/')))
                 .WithMessage("External URL must be a valid URL and must not end with a slash ('/').");
 
-            // API Key validation
-            RuleFor(c => c.ApiKey)
-                .NotEmpty()
-                .WithMessage("API Key is required.");
-
             // File Limit validation
             RuleFor(c => c.FileLimit)
                 .GreaterThanOrEqualTo(1)
@@ -214,10 +209,10 @@ namespace Tubifarry.Indexers.Soulseek
         [FieldOption(Label = "Disabled", Hint = "No track count filtering.")]
         Disabled = 0,
 
-        [FieldOption(Label = "Exact", Hint = "Only allow releases matching the exact track count.")]
+        [FieldOption(Label = "Exact", Hint = "Only allow releases whose track count matches one edition of the album.")]
         Exact = 1,
 
-        [FieldOption(Label = "Lower", Hint = "Filter out releases with fewer tracks than expected.")]
+        [FieldOption(Label = "Lower", Hint = "Filter out releases with fewer tracks than the shortest edition of the album.")]
         Lower = 2,
 
         [FieldOption(Label = "Unfitting", Hint = "Exclude releases with significantly wrong track count.")]

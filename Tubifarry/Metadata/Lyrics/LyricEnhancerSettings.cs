@@ -69,10 +69,10 @@ namespace Tubifarry.Metadata.Lyrics
         [FieldDefinition(7, Label = "Enable Genius", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use Genius as a lyrics provider (text only, no synced lyrics)")]
         public bool GeniusEnabled { get; set; }
 
-        [FieldDefinition(8, Label = "Genius API Key", Type = FieldType.Textbox, Section = MetadataSectionType.Metadata, HelpText = "Your Genius API key", Privacy = PrivacyLevel.ApiKey)]
+        [FieldDefinition(8, Label = "Genius API Key", Type = FieldType.Textbox, Section = MetadataSectionType.Metadata, HelpText = "Client Access Token from genius.com/api-clients (not the client ID or secret)", Privacy = PrivacyLevel.ApiKey)]
         public string GeniusApiKey { get; set; } = "";
 
-        // Binimum Provider settings (ISRC-keyed Apple Music TTML cache)
+        // Binimum Provider settings
         [FieldDefinition(9, Label = "Enable Binimum", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use Binimum as a lyrics provider")]
         public bool BinimumEnabled { get; set; }
 
@@ -93,42 +93,44 @@ namespace Tubifarry.Metadata.Lyrics
         [FieldDefinition(14, Label = "Unison URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "URL of the Unison API instance", Placeholder = "https://unison.boidu.dev", Hidden = HiddenType.Hidden)]
         public string UnisonUrl { get; set; } = "https://unison.boidu.dev";
 
-        // Scheduled Update Settings
-        [FieldDefinition(15, Label = "Enable Scheduled Updates", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Enable automatic scheduled updates to refresh lyrics for existing files")]
-        public bool EnableScheduledUpdates { get; set; }
-
-        [FieldDefinition(16, Label = "Update Interval", Type = FieldType.Number, Unit = "days", Section = MetadataSectionType.Metadata, HelpText = "How often to run scheduled lyrics updates.")]
-        public int UpdateInterval { get; set; } = 7;
-
-        // NetEase Provider settings
-        [FieldDefinition(17, Label = "Enable NetEase", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use NetEase Cloud Music as a lyrics provider (synced; strong coverage incl. metal)")]
+        [FieldDefinition(15, Label = "Enable NetEase", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use NetEase Cloud Music as a lyrics provider (line-synced, strong on Asian and European music)")]
         public bool NetEaseEnabled { get; set; }
 
+        [FieldDefinition(16, Label = "NetEase URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "URL of the NetEase Cloud Music API", Placeholder = "https://music.163.com", Hidden = HiddenType.Hidden)]
+        public string NetEaseUrl { get; set; } = "https://music.163.com";
+
+        // Scheduled Update Settings
+        [FieldDefinition(17, Label = "Enable Scheduled Updates", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Enable automatic scheduled updates to refresh lyrics for existing files")]
+        public bool EnableScheduledUpdates { get; set; }
+
+        [FieldDefinition(18, Label = "Update Interval", Type = FieldType.Number, Unit = "days", Section = MetadataSectionType.Metadata, HelpText = "How often to run scheduled lyrics updates.")]
+        public int UpdateInterval { get; set; } = 7;
+
         // DarkLyrics Provider settings
-        [FieldDefinition(18, Label = "Enable DarkLyrics", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use DarkLyrics as a lyrics provider (plain text; metal archive)")]
+        [FieldDefinition(19, Label = "Enable DarkLyrics", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use DarkLyrics as a lyrics provider (plain text; metal archive)")]
         public bool DarkLyricsEnabled { get; set; }
 
         // Metal Archives Provider settings
-        [FieldDefinition(19, Label = "Enable Metal Archives", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use Encyclopaedia Metallum (plain text; requires FlareSolverr for Cloudflare)")]
+        [FieldDefinition(20, Label = "Enable Metal Archives", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use Encyclopaedia Metallum (plain text; requires FlareSolverr for Cloudflare)")]
         public bool MetalArchivesEnabled { get; set; }
 
-        [FieldDefinition(20, Label = "FlareSolverr URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "FlareSolverr endpoint used to bypass Cloudflare for Metal Archives", Placeholder = "http://localhost:8191")]
+        [FieldDefinition(21, Label = "FlareSolverr URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "FlareSolverr endpoint used to bypass Cloudflare for Metal Archives", Placeholder = "http://localhost:8191")]
         public string FlareSolverrUrl { get; set; } = string.Empty;
 
         // Local fallback tiers (lyrics-local service) — Tier 3 forced alignment & Tier 4
         // transcription. When the online providers fail, the enhancer hands the track off
         // to an out-of-process service that does source separation + Whisper. Heavy work
         // never blocks the metadata pipeline; the service writes the .lrc/.txt sidecar.
-        [FieldDefinition(21, Label = "Enable Local Lyric Tiers", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Hand tracks the online providers couldn't sync to the lyrics-local service (forced alignment / transcription)")]
+        [FieldDefinition(22, Label = "Enable Local Lyric Tiers", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Hand tracks the online providers couldn't sync to the lyrics-local service (forced alignment / transcription)")]
         public bool LocalLyricsEnabled { get; set; }
 
-        [FieldDefinition(22, Label = "lyrics-local Service URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "Base URL of the lyrics-local service", Placeholder = "http://10.0.0.120:8585")]
+        [FieldDefinition(23, Label = "lyrics-local Service URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "Base URL of the lyrics-local service", Placeholder = "http://10.0.0.120:8585")]
         public string LocalLyricsServiceUrl { get; set; } = "http://10.0.0.120:8585";
 
-        [FieldDefinition(23, Label = "Local Tier 3 (Forced Alignment)", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When plain lyrics exist but no synced version, align the text to the audio to produce an .lrc")]
+        [FieldDefinition(24, Label = "Local Tier 3 (Forced Alignment)", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When plain lyrics exist but no synced version, align the text to the audio to produce an .lrc")]
         public bool LocalAlignEnabled { get; set; } = true;
 
-        [FieldDefinition(24, Label = "Local Tier 4 (Transcription)", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Last resort: when no lyric text exists anywhere, transcribe the vocals (labelled low-confidence)")]
+        [FieldDefinition(25, Label = "Local Tier 4 (Transcription)", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Last resort: when no lyric text exists anywhere, transcribe the vocals (labelled low-confidence)")]
         public bool LocalTranscribeEnabled { get; set; } = true;
 
         public LyricsEnhancerSettings() => Instance = this;

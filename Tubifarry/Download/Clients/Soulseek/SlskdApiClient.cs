@@ -135,11 +135,10 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
 
     public async Task<SlskdUserTransfers?> GetUserTransfersAsync(SlskdProviderSettings settings, string username)
     {
-        HttpResponse response = await httpClient.ExecuteAsync(
-            BuildRequest(settings, $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}"));
+        HttpRequest request = BuildRequest(settings, $"/api/v0/transfers/downloads/{Uri.EscapeDataString(username)}");
+        request.SuppressHttpError = true;
+        HttpResponse response = await httpClient.ExecuteAsync(request);
 
-        if (response.StatusCode == HttpStatusCode.NotFound)
-            return null;
         if (response.StatusCode != HttpStatusCode.OK)
             return null;
 
@@ -151,6 +150,26 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
             Username = username,
             Directories = SlskdDownloadDirectory.GetDirectories(dirsEl).ToList()
         };
+    }
+
+    public async Task<SlskdBatch?> GetBatchAsync(SlskdProviderSettings settings, string batchId)
+    {
+        HttpRequest request = BuildRequest(settings, $"/api/v0/transfers/downloads/batches/{Uri.EscapeDataString(batchId)}");
+        request.SuppressHttpError = true;
+        HttpResponse response = await httpClient.ExecuteAsync(request);
+
+        if (response.StatusCode != HttpStatusCode.OK || string.IsNullOrWhiteSpace(response.Content))
+            return null;
+
+        using JsonDocument doc = JsonDocument.Parse(response.Content);
+        string? destination = doc.RootElement.TryGetProperty("options", out JsonElement options) &&
+            options.ValueKind == JsonValueKind.Object &&
+            options.TryGetProperty("destination", out JsonElement dest) &&
+            dest.ValueKind == JsonValueKind.String
+                ? dest.GetString()
+                : null;
+
+        return new SlskdBatch(string.IsNullOrWhiteSpace(destination) ? null : destination);
     }
 
     public async Task<SlskdDownloadFile?> GetTransferAsync(SlskdProviderSettings settings, string username, string fileId)
@@ -251,6 +270,12 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
 
             return null;
         }
+        catch (HttpException ex) when (ex.Response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return new ValidationFailure("ApiKey", string.IsNullOrWhiteSpace(settings.ApiKey)
+                ? "API Key is required."
+                : "API Key is wrong.");
+        }
         catch (HttpException ex)
         {
             return new ValidationFailure("BaseUrl", $"Unable to connect to Slskd: {ex.Message}");
@@ -297,8 +322,10 @@ public class SlskdApiClient(IHttpClient httpClient) : ISlskdApiClient
         HttpMethod? method = null, string? content = null)
     {
         HttpRequestBuilder builder = new HttpRequestBuilder($"{settings.BaseUrl}{endpoint}")
-            .SetHeader("X-API-KEY", settings.ApiKey)
             .SetHeader("Accept", "application/json");
+
+        if (!string.IsNullOrWhiteSpace(settings.ApiKey))
+            builder.SetHeader("X-API-KEY", settings.ApiKey);
 
         if (method != null)
             builder.Method = method;

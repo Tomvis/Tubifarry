@@ -57,6 +57,9 @@ namespace Tubifarry.Indexers.Soulseek
             List<Track>? trackList = trackSource?.Tracks?.Value?.Where(x => !string.IsNullOrEmpty(x.Title)).ToList();
             List<string> tracks = trackList?.Select(x => x.Title).ToList() ?? [];
             List<int> trackDurations = trackList?.Where(t => t.Duration > 0).Select(t => t.Duration).ToList() ?? [];
+            List<int> trackCounts = albumReleases?.Select(r => r.TrackCount).Where(c => c > 0).Distinct().Order().ToList() ?? [];
+            if (trackCounts.Count == 0 && trackCount > 0)
+                trackCounts = [trackCount];
 
             _processedSearches.Clear();
 
@@ -72,7 +75,10 @@ namespace Tubifarry.Indexers.Soulseek
                 TrackDurations: trackDurations,
                 Settings: Settings,
                 ProcessedSearches: _processedSearches,
-                SearchCriteria: searchCriteria);
+                SearchCriteria: searchCriteria)
+            {
+                TrackCounts = trackCounts
+            };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
         }
@@ -165,7 +171,7 @@ namespace Tubifarry.Indexers.Soulseek
                     _searchLimiter?.Dispose();
                     _currentLimit = Settings.ConcurrentSearchLimit;
                     _searchLimiter = new SemaphoreSlim(Settings.ConcurrentSearchLimit, Settings.ConcurrentSearchLimit);
-                    _logger.Warn($"Search limiter initialized: {_currentLimit} concurrent");
+                    _logger.Debug($"Search limiter initialized: {_currentLimit} concurrent");
                 }
                 return _searchLimiter;
             }
@@ -194,7 +200,7 @@ namespace Tubifarry.Indexers.Soulseek
 
                         _logger.Debug($"Search: {searchText}");
 
-                        SlskdSearchRequestBody searchData = CreateSearchData(searchText, query.TrackCount);
+                        SlskdSearchRequestBody searchData = CreateSearchData(searchText, GetFewestTracks(query));
                         string searchId = searchData.Id;
                         HttpRequest searchRequest = CreateSearchRequest(searchData);
 
@@ -254,6 +260,9 @@ namespace Tubifarry.Indexers.Soulseek
             }
         }
 
+        private static int GetFewestTracks(SearchQuery query) =>
+            query.TrackCounts.Count > 0 ? query.TrackCounts.Min() : query.TrackCount;
+
         private int GetEffectiveMinimumFileCount(int trackCount) =>
             trackCount > 0 ? Math.Min(Settings.MinimumResponseFileCount, trackCount) : Settings.MinimumResponseFileCount;
 
@@ -272,11 +281,14 @@ namespace Tubifarry.Indexers.Soulseek
 
         private HttpRequest CreateSearchRequest(SlskdSearchRequestBody searchData)
         {
-            HttpRequest searchRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches")
-                .SetHeader("X-API-KEY", Settings.ApiKey)
+            HttpRequestBuilder builder = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches")
                 .SetHeader("Content-Type", "application/json")
-                .Post()
-                .Build();
+                .Post();
+
+            if (!string.IsNullOrWhiteSpace(Settings.ApiKey))
+                builder.SetHeader("X-API-KEY", Settings.ApiKey);
+
+            HttpRequest searchRequest = builder.Build();
 
             searchRequest.SetContent(JsonSerializer.Serialize(searchData));
             return searchRequest;
@@ -290,26 +302,31 @@ namespace Tubifarry.Indexers.Soulseek
 
         private HttpRequest CreateResultRequest(string searchId, SearchQuery query)
         {
-            HttpRequest request = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
-                .AddQueryParam("includeResponses", true)
-                .SetHeader("X-API-KEY", Settings.ApiKey)
-                .Build();
+            HttpRequestBuilder builder = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
+                .AddQueryParam("includeResponses", true);
+            if (!string.IsNullOrWhiteSpace(Settings.ApiKey))
+                builder.SetHeader("X-API-KEY", Settings.ApiKey);
+
+            HttpRequest request = builder.Build();
 
             TrackCountFilterType filterType = (TrackCountFilterType)Settings.TrackCountFilter;
 
-            int effectiveMinimum = GetEffectiveMinimumFileCount(query.TrackCount);
+            IReadOnlyList<int> editionTrackCounts = query.TrackCounts.Count > 0 ? query.TrackCounts : query.TrackCount > 0 ? [query.TrackCount] : [];
+            int fewestTracks = GetFewestTracks(query);
+            int effectiveMinimum = GetEffectiveMinimumFileCount(fewestTracks);
+            int mostTracks = editionTrackCounts.Count > 0 ? editionTrackCounts.Max() : query.TrackCount;
 
             int minimumFiles = filterType switch
             {
                 TrackCountFilterType.Exact or TrackCountFilterType.Lower or TrackCountFilterType.Unfitting
-                    => Math.Max(effectiveMinimum, query.TrackCount),
+                    => Math.Max(effectiveMinimum, fewestTracks),
                 _ => effectiveMinimum
             };
 
             int? maximumFiles = filterType switch
             {
-                TrackCountFilterType.Exact => query.TrackCount,
-                TrackCountFilterType.Unfitting => query.TrackCount + Math.Max(2, (int)Math.Ceiling(Math.Log(query.TrackCount) * 1.67)),
+                TrackCountFilterType.Exact => mostTracks,
+                TrackCountFilterType.Unfitting => mostTracks + Math.Max(2, (int)Math.Ceiling(Math.Log(mostTracks) * 1.67)),
                 _ => null
             };
 
@@ -321,7 +338,8 @@ namespace Tubifarry.Indexers.Soulseek
                 MinimumFiles: minimumFiles,
                 MaximumFiles: maximumFiles,
                 Tracks: query.Tracks.Take(50).ToList(),
-                TrackDurations: query.TrackDurations.Count > 0 ? [.. query.TrackDurations] : null));
+                TrackDurations: query.TrackDurations.Count > 0 ? [.. query.TrackDurations] : null,
+                TrackCounts: editionTrackCounts.Count > 0 ? [.. editionTrackCounts] : null));
 
             return request;
         }
@@ -357,8 +375,11 @@ namespace Tubifarry.Indexers.Soulseek
 
         private async Task<JsonNode?> GetSearchResultsAsync(string searchId)
         {
-            HttpRequest searchResultsRequest = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}")
-                     .SetHeader("X-API-KEY", Settings.ApiKey).Build();
+            HttpRequestBuilder builder = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/searches/{searchId}");
+            if (!string.IsNullOrWhiteSpace(Settings.ApiKey))
+                builder.SetHeader("X-API-KEY", Settings.ApiKey);
+
+            HttpRequest searchResultsRequest = builder.Build();
 
             HttpResponse response = await _client.ExecuteAsync(searchResultsRequest);
 
@@ -396,13 +417,17 @@ namespace Tubifarry.Indexers.Soulseek
         {
             try
             {
-                HttpRequest request = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/users/{Uri.EscapeDataString(username)}/directory")
-                    .SetHeader("X-API-KEY", Settings.ApiKey)
+                HttpRequestBuilder builder = new HttpRequestBuilder($"{Settings.BaseUrl}/api/v0/users/{Uri.EscapeDataString(username)}/directory")
                     .SetHeader("Content-Type", "application/json")
-                    .Post()
-                    .Build();
+                    .Post();
+
+                if (!string.IsNullOrWhiteSpace(Settings.ApiKey))
+                    builder.SetHeader("X-API-KEY", Settings.ApiKey);
+
+                HttpRequest request = builder.Build();
 
                 request.SetContent(JsonSerializer.Serialize(new { directory = directoryPath }));
+                request.SuppressHttpError = true;
 
                 HttpResponse response = await _client.ExecuteAsync(request);
 
