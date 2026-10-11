@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Tubifarry.Core.Utilities;
 using Tubifarry.Download.Clients.YouTube;
 using Xunit;
 using YouTubeMusicAPI.Models.Streaming;
@@ -28,10 +27,10 @@ namespace Tubifarry.Tests.YouTube
         }
 
         [Fact]
-        public void Average_bitrate_rounds_premium_aac_to_256()
+        public void Average_bitrate_comes_from_size_not_peak()
         {
-            AudioStreamInfo premium = Audio(141, "mp4a.40.2", 262_000, 6_440_000);
-            Assert.Equal(256, AudioFormatHelper.RoundToStandardBitrate(YouTubeStreams.AverageKbps(premium)));
+            AudioStreamInfo premium = Audio(141, "mp4a.40.2", 310_000, 6_440_000);
+            Assert.Equal(257, YouTubeStreams.AverageKbps(premium));
         }
     }
 }
