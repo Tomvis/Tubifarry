@@ -152,16 +152,13 @@ namespace Tubifarry.Indexers.Spotify
                             continue;
 
                         StreamingData streamingData = await _ytClient.GetStreamingDataAsync(firstTrack.Id);
-                        AudioStreamInfo? bestAudioStream = streamingData.StreamInfo
-                            .OfType<AudioStreamInfo>()
-                            .OrderByDescending(info => info.Bitrate)
-                            .FirstOrDefault();
+                        AudioStreamInfo? bestAudioStream = YouTubeStreams.BestAudio(streamingData.StreamInfo);
 
                         if (bestAudioStream != null)
                         {
                             albumData.AlbumId = ytAlbum.Id;
                             albumData.Duration = (long)albumInfo.Duration.TotalSeconds;
-                            albumData.Bitrate = AudioFormatHelper.RoundToStandardBitrate(bestAudioStream.Bitrate / 1000);
+                            albumData.Bitrate = AudioFormatHelper.RoundToStandardBitrate(YouTubeStreams.AverageKbps(bestAudioStream));
                             albumData.TotalTracks = albumInfo.SongCount;
                             _logger.Trace($"Successfully enriched album: '{albumData.AlbumName}' (Bitrate: {albumData.Bitrate}kbps)");
                             return albumData;

@@ -85,7 +85,7 @@ namespace Tubifarry.Download.Clients.YouTube
                     await TryUpdateVideoBoundTokensAsync(trackInfo.Id, token);
 
                     StreamingData streamingData = await Options.YouTubeMusicClient.GetStreamingDataAsync(trackInfo.Id, token).ConfigureAwait(false);
-                    AudioStreamInfo? highestAudioStreamInfo = streamingData.StreamInfo.OfType<AudioStreamInfo>().OrderByDescending(info => info.Bitrate).FirstOrDefault();
+                    AudioStreamInfo? highestAudioStreamInfo = YouTubeStreams.BestAudio(streamingData.StreamInfo);
 
                     if (highestAudioStreamInfo == null)
                     {

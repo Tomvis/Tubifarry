@@ -156,13 +156,10 @@ namespace Tubifarry.Indexers.YouTube
                     try
                     {
                         StreamingData streamingData = await _youTubeClient.GetStreamingDataAsync(firstTrack.Id);
-                        AudioStreamInfo? highestQualityStream = streamingData.StreamInfo
-                            .OfType<AudioStreamInfo>()
-                            .OrderByDescending(info => info.Bitrate)
-                            .FirstOrDefault();
+                        AudioStreamInfo? highestQualityStream = YouTubeStreams.BestAudio(streamingData.StreamInfo);
 
                         if (highestQualityStream != null)
-                            albumData.Bitrate = AudioFormatHelper.RoundToStandardBitrate(highestQualityStream.Bitrate / 1000);
+                            albumData.Bitrate = AudioFormatHelper.RoundToStandardBitrate(YouTubeStreams.AverageKbps(highestQualityStream));
                         else
                             albumData.Bitrate = DEFAULT_BITRATE;
                     }
