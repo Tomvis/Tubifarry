@@ -39,7 +39,7 @@ public static partial class SlskdWantedFileFilter
 {
     private const int DurationToleranceSec = 10;
 
-    private record Candidate(SlskdFileData File, HashSet<string> Titles, int Disc, int Number);
+    private record Candidate(SlskdFileData File, HashSet<string> Titles, int Disc, int Number, int? Seconds);
 
     // Audio files to enqueue, or null for the whole folder: nothing is unwanted, or a wanted track has no match
     // (a partial grab would leave it missing and the next search would re-grab this folder).
@@ -49,6 +49,11 @@ public static partial class SlskdWantedFileFilter
             return null;
 
         List<Candidate> audio = files.Where(IsAudio).Select(ToCandidate).ToList();
+
+        // A browsed folder (indexer's directory expansion) copies the search hit's length onto every file
+        if (audio.Count > 1 && audio.All(c => c.Seconds == audio[0].Seconds))
+            audio = audio.Select(c => c with { Seconds = null }).ToList();
+
         List<SlskdFileData> picked = [];
         foreach (WantedTrack want in wanted)
         {
@@ -69,9 +74,9 @@ public static partial class SlskdWantedFileFilter
         if (title.Length == 0)
             return null;
 
-        List<Candidate> candidates = audio.Where(c => c.Titles.Contains(title) && DurationFits(c.File, want)).ToList();
+        List<Candidate> candidates = audio.Where(c => c.Titles.Contains(title) && DurationFits(c, want)).ToList();
         return candidates.FirstOrDefault(c => c.Disc == want.Disc && c.Number == want.Number)
-            ?? candidates.OrderBy(c => DurationGap(c.File, want)).FirstOrDefault();
+            ?? candidates.OrderBy(c => DurationGap(c, want)).FirstOrDefault();
     }
 
     // Same tracklist length: trust disc/number when the durations agree (titles differ by translation etc.)
@@ -80,14 +85,14 @@ public static partial class SlskdWantedFileFilter
         if (audio.Count != releaseTrackCount || want.DurationMs <= 0)
             return null;
 
-        return audio.FirstOrDefault(c => c.Disc == want.Disc && c.Number == want.Number && c.File.Length > 0 && DurationFits(c.File, want));
+        return audio.FirstOrDefault(c => c.Disc == want.Disc && c.Number == want.Number && c.Seconds > 0 && DurationFits(c, want));
     }
 
-    private static bool DurationFits(SlskdFileData file, WantedTrack want) =>
-        want.DurationMs <= 0 || file.Length is not > 0 || DurationGap(file, want) <= DurationToleranceSec;
+    private static bool DurationFits(Candidate c, WantedTrack want) =>
+        want.DurationMs <= 0 || c.Seconds is not > 0 || DurationGap(c, want) <= DurationToleranceSec;
 
-    private static int DurationGap(SlskdFileData file, WantedTrack want) =>
-        Math.Abs((file.Length ?? 0) - (int)Math.Round(want.DurationMs / 1000.0));
+    private static int DurationGap(Candidate c, WantedTrack want) =>
+        Math.Abs((c.Seconds ?? 0) - (int)Math.Round(want.DurationMs / 1000.0));
 
     private static bool IsAudio(SlskdFileData file) =>
         AudioFormatHelper.GetAudioCodecFromExtension(
@@ -133,7 +138,7 @@ public static partial class SlskdWantedFileFilter
                 titles.Add(rest);
         }
 
-        return new Candidate(file, titles, disc, number);
+        return new Candidate(file, titles, disc, number, file.Length);
     }
 
     // "Song (feat. X) [2009 Remaster]" and "Song - 2009 Remaster" both become "song"; "Lux Æterna" = "Lux Aeterna"

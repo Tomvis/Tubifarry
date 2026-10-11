@@ -100,6 +100,22 @@ namespace Tubifarry.Tests.Soulseek
         }
 
         [Fact]
+        public void Identical_lengths_across_a_browsed_folder_are_ignored()
+        {
+            List<SlskdFileData> files =
+            [
+                File(@"music\Metallica\[2023] 72 Seasons\01 Metallica - 72 Seasons.flac", 459),
+                File(@"music\Metallica\[2023] 72 Seasons\02 Metallica - Shadows Follow.flac", 459),
+                File(@"music\Metallica\[2023] 72 Seasons\10 Metallica - Too Far Gone_.flac", 459),
+            ];
+            List<SlskdFileData>? picked = SlskdWantedFileFilter.Select(files, [new WantedTrack("Shadows Follow", 1, 2, 371_880)], 12);
+            Assert.Equal([files[1].Filename], Names(picked));
+
+            picked = SlskdWantedFileFilter.Select(files, [new WantedTrack("Too Far Gone?", 1, 10, 273_693)], 12);
+            Assert.Equal([files[2].Filename], Names(picked));
+        }
+
+        [Fact]
         public void Non_audio_files_are_never_picked()
         {
             List<SlskdFileData>? picked = SlskdWantedFileFilter.Select(Album, [new WantedTrack("Shadows Follow", 1, 2, 372_000)], 12);
