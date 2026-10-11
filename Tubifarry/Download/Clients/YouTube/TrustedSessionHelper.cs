@@ -155,7 +155,7 @@ namespace Tubifarry.Download.Clients.YouTube
             {
                 UseCookies = false
             };
-            HttpClient httpClient = new(handler);
+            HttpClient httpClient = new(new YouTubeContentCheckHandler(handler));
 
             YouTubeMusicClient client = new(
                 // logger: new YouTubeSessionGeneratorLogger(_logger),
