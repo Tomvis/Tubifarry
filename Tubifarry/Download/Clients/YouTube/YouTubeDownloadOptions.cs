@@ -15,6 +15,11 @@ namespace Tubifarry.Download.Clients.YouTube
         public YouTubeMusicClient? YouTubeMusicClient { get; set; }
 
         /// <summary>
+        /// Cookie-less client for album lookups (Tomvis fork, see TrustedSessionHelper.CreateMetadataClientAsync)
+        /// </summary>
+        public YouTubeMusicClient? MetadataClient { get; set; }
+
+        /// <summary>
         /// Re-encoding options for audio format conversion
         /// </summary>
         public ReEncodeOptions ReEncodeOptions { get; set; }
@@ -61,6 +66,7 @@ namespace Tubifarry.Download.Clients.YouTube
         protected YouTubeDownloadOptions(YouTubeDownloadOptions options) : base(options)
         {
             YouTubeMusicClient = options.YouTubeMusicClient;
+            MetadataClient = options.MetadataClient;
             ReEncodeOptions = options.ReEncodeOptions;
             UseID3v2_3 = options.UseID3v2_3;
             RandomDelayMin = options.RandomDelayMin;

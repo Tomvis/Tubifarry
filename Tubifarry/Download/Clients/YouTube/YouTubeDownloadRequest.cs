@@ -25,6 +25,7 @@ namespace Tubifarry.Download.Clients.YouTube
         public YouTubeDownloadRequest(RemoteAlbum remoteAlbum, YouTubeDownloadOptions? options) : base(remoteAlbum, options)
         {
             Options.YouTubeMusicClient ??= TrustedSessionHelper.CreateAuthenticatedClientAsync().GetAwaiter().GetResult();
+            Options.MetadataClient ??= Options.YouTubeMusicClient;
 
             _requestContainer.Add(new OwnRequest(async (token) =>
             {
@@ -56,8 +57,8 @@ namespace Tubifarry.Download.Clients.YouTube
 
         private async Task ProcessAlbumAsync(string downloadUrl, CancellationToken token)
         {
-            string albumBrowseID = await Options.YouTubeMusicClient!.GetAlbumBrowseIdAsync(downloadUrl, token).ConfigureAwait(false);
-            AlbumInfo albumInfo = await Options.YouTubeMusicClient.GetAlbumInfoAsync(albumBrowseID, token).ConfigureAwait(false);
+            string albumBrowseID = await Options.MetadataClient!.GetAlbumBrowseIdAsync(downloadUrl, token).ConfigureAwait(false);
+            AlbumInfo albumInfo = await Options.MetadataClient.GetAlbumInfoAsync(albumBrowseID, token).ConfigureAwait(false);
 
             await ApplyRandomDelayAsync(token);
 

@@ -30,6 +30,7 @@ namespace Tubifarry.Indexers.Spotify
         private const int MAX_CONCURRENT_ENRICHMENTS = 3;
 
         private YouTubeMusicClient? _ytClient;
+        private YouTubeMusicClient? _metadataClient;
         private SessionTokens? _sessionTokens;
         private readonly Logger _logger = logger;
         private SpotifyIndexerSettings? _currentSettings;
@@ -45,6 +46,7 @@ namespace Tubifarry.Indexers.Spotify
             {
                 _sessionTokens = TrustedSessionHelper.GetTrustedSessionTokensAsync(settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
                 _ytClient = TrustedSessionHelper.CreateAuthenticatedClientAsync(settings.TrustedSessionGeneratorUrl, settings.CookiePath).GetAwaiter().GetResult();
+                _metadataClient = TrustedSessionHelper.CreateMetadataClientAsync(settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
                 _logger.Debug("Successfully created authenticated YouTube Music client for enrichment");
             }
             catch (Exception ex)
@@ -130,8 +132,8 @@ namespace Tubifarry.Indexers.Spotify
 
                         try
                         {
-                            browseId = await _ytClient.GetAlbumBrowseIdAsync(ytAlbum.Id);
-                            albumInfo = await _ytClient.GetAlbumInfoAsync(browseId);
+                            browseId = await _metadataClient!.GetAlbumBrowseIdAsync(ytAlbum.Id);
+                            albumInfo = await _metadataClient.GetAlbumInfoAsync(browseId);
                         }
                         catch (Exception ex)
                         {

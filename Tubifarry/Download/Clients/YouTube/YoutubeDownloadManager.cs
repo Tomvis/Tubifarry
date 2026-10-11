@@ -23,6 +23,7 @@ namespace Tubifarry.Download.Clients.YouTube
     public class YoutubeDownloadManager : BaseDownloadManager<YouTubeDownloadRequest, YouTubeDownloadOptions, YoutubeClient>, IYoutubeDownloadManager
     {
         private YouTubeMusicClient? _youTubeClient;
+        private YouTubeMusicClient? _metadataClient;
         private SessionTokens? _sessionToken;
         private readonly IAudioProcessingService _audioProcessing;
         private readonly ITrackService _trackService;
@@ -46,6 +47,7 @@ namespace Tubifarry.Download.Clients.YouTube
             YouTubeDownloadOptions options = new()
             {
                 YouTubeMusicClient = _youTubeClient,
+                MetadataClient = _metadataClient,
                 Handler = _requesthandler,
                 AudioProcessing = _audioProcessing,
                 DownloadPath = provider.Settings.DownloadPath,
@@ -77,6 +79,7 @@ namespace Tubifarry.Download.Clients.YouTube
                 return;
             _sessionToken = await TrustedSessionHelper.GetTrustedSessionTokensAsync(provider.Settings.TrustedSessionGeneratorUrl);
             _youTubeClient = await TrustedSessionHelper.CreateAuthenticatedClientAsync(provider.Settings.TrustedSessionGeneratorUrl, provider.Settings.CookiePath);
+            _metadataClient = await TrustedSessionHelper.CreateMetadataClientAsync(provider.Settings.TrustedSessionGeneratorUrl);
         }
     }
 }

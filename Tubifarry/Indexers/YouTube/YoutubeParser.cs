@@ -25,6 +25,7 @@ namespace Tubifarry.Indexers.YouTube
         private readonly Logger _logger;
         private readonly YouTubeIndexer _youTubeIndexer;
         private YouTubeMusicClient? _youTubeClient;
+        private YouTubeMusicClient? _metadataClient;
         private SessionTokens? _sessionToken;
 
         private static readonly Lazy<Func<JObject, Page<SearchResult>?>?> _getPageDelegate = new(() =>
@@ -135,8 +136,8 @@ namespace Tubifarry.Indexers.YouTube
             {
                 UpdateClient();
 
-                string browseId = await _youTubeClient!.GetAlbumBrowseIdAsync(albumData.AlbumId);
-                AlbumInfo albumInfo = await _youTubeClient.GetAlbumInfoAsync(browseId);
+                string browseId = await _metadataClient!.GetAlbumBrowseIdAsync(albumData.AlbumId);
+                AlbumInfo albumInfo = await _metadataClient.GetAlbumInfoAsync(browseId);
 
                 if (albumInfo?.Songs == null || albumInfo.Songs.Length == 0)
                 {
@@ -189,6 +190,7 @@ namespace Tubifarry.Indexers.YouTube
                 return;
             _sessionToken = TrustedSessionHelper.GetTrustedSessionTokensAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
             _youTubeClient = TrustedSessionHelper.CreateAuthenticatedClientAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl, _youTubeIndexer.Settings.CookiePath).GetAwaiter().GetResult();
+            _metadataClient = TrustedSessionHelper.CreateMetadataClientAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
         }
 
         private static AlbumData ExtractAlbumInfo(AlbumSearchResult album) => new("Youtube", nameof(YoutubeDownloadProtocol))

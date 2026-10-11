@@ -180,6 +180,14 @@ namespace Tubifarry.Download.Clients.YouTube
         }
 
         /// <summary>
+        /// Tomvis fork (MUSIC-64): a client for album lookups. Signed in, an album's header play button carries a
+        /// watchEndpoint, which YouTubeMusicAPI 3.0.11 can't parse ("buttons[2]...watchPlaylistEndpoint.playlistId"
+        /// is null). Album metadata is the same signed out, so read it without cookies; streams keep the cookie.
+        /// </summary>
+        public static Task<YouTubeMusicClient> CreateMetadataClientAsync(string? trustedSessionGeneratorUrl = null) =>
+            CreateAuthenticatedClientAsync(trustedSessionGeneratorUrl, cookiePath: null);
+
+        /// <summary>
         /// Updates an existing YouTube Music client with video-bound tokens
         /// </summary>
         public static async Task UpdateClientWithVideoBoundTokensAsync(YouTubeMusicClient client, string videoId, string? serviceUrl = null, CancellationToken token = default)
