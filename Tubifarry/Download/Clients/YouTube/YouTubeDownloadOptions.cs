@@ -20,6 +20,11 @@ namespace Tubifarry.Download.Clients.YouTube
         public YouTubeMusicClient? MetadataClient { get; set; }
 
         /// <summary>
+        /// Whether YouTubeMusicClient carries a cookie (Tomvis fork)
+        /// </summary>
+        public bool SignedIn { get; set; }
+
+        /// <summary>
         /// Re-encoding options for audio format conversion
         /// </summary>
         public ReEncodeOptions ReEncodeOptions { get; set; }
@@ -67,6 +72,7 @@ namespace Tubifarry.Download.Clients.YouTube
         {
             YouTubeMusicClient = options.YouTubeMusicClient;
             MetadataClient = options.MetadataClient;
+            SignedIn = options.SignedIn;
             ReEncodeOptions = options.ReEncodeOptions;
             UseID3v2_3 = options.UseID3v2_3;
             RandomDelayMin = options.RandomDelayMin;

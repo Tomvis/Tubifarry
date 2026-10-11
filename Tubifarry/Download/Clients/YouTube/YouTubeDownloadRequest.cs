@@ -82,7 +82,10 @@ namespace Tubifarry.Download.Clients.YouTube
 
                 try
                 {
-                    await TryUpdateVideoBoundTokensAsync(trackInfo.Id, token);
+                    // Tomvis fork (MUSIC-64): a video-bound token swaps VisitorData for the video id, which a signed-in
+                    // session rejects ("This media stream is not playable"); the session token works there.
+                    if (!Options.SignedIn)
+                        await TryUpdateVideoBoundTokensAsync(trackInfo.Id, token);
 
                     StreamingData streamingData = await Options.YouTubeMusicClient.GetStreamingDataAsync(trackInfo.Id, token).ConfigureAwait(false);
                     AudioStreamInfo? highestAudioStreamInfo = YouTubeStreams.BestAudio(streamingData.StreamInfo);

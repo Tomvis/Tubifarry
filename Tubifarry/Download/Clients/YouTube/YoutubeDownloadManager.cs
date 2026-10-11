@@ -48,6 +48,7 @@ namespace Tubifarry.Download.Clients.YouTube
             {
                 YouTubeMusicClient = _youTubeClient,
                 MetadataClient = _metadataClient,
+                SignedIn = !string.IsNullOrWhiteSpace(provider.Settings.CookiePath),
                 Handler = _requesthandler,
                 AudioProcessing = _audioProcessing,
                 DownloadPath = provider.Settings.DownloadPath,
