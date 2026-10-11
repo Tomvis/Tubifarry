@@ -10,6 +10,7 @@ using Requests.Options;
 using Tubifarry.Core.FFmpeg;
 using Tubifarry.Core.Utilities;
 using Tubifarry.Download.Base;
+using Tubifarry.Download.Clients.Soulseek;
 using YouTubeMusicAPI.Models;
 using YouTubeMusicAPI.Models.Info;
 using YouTubeMusicAPI.Models.Streaming;
@@ -66,10 +67,11 @@ namespace Tubifarry.Download.Clients.YouTube
                 return;
             }
 
-            _expectedTrackCount = albumInfo.Songs.Length;
+            AlbumSong[] songs = WantedSongs(albumInfo.Songs);
+            _expectedTrackCount = songs.Length;
             _albumCover = await TryDownloadCoverAsync(albumInfo, token).ConfigureAwait(false);
 
-            foreach (AlbumSong trackInfo in albumInfo.Songs)
+            foreach (AlbumSong trackInfo in songs)
             {
                 if (trackInfo.Id == null)
                 {
@@ -104,6 +106,25 @@ namespace Tubifarry.Download.Clients.YouTube
             }
 
             _requestContainer.Add(_trackContainer);
+        }
+
+        // Tomvis fork (MUSIC-64): a partial album downloads only the wanted songs
+        private AlbumSong[] WantedSongs(AlbumSong[] songs)
+        {
+            List<WantedTrack>? wanted = Options.WantedTracks;
+            if (wanted == null)
+                return songs;
+
+            List<YouTubeSong> reduced = songs.Select(s => new YouTubeSong(s.Name, s.SongNumber, (int)s.Duration.TotalMilliseconds)).ToList();
+            List<int>? picked = YouTubeWantedSongFilter.Select(reduced, wanted, Options.ReleaseTrackCount);
+            if (picked == null)
+            {
+                LogAndAppendMessage($"{ReleaseInfo.Title}: {wanted.Count} of {Options.ReleaseTrackCount} tracks wanted, but not all match a song; downloading the whole album", LogLevel.Info);
+                return songs;
+            }
+
+            LogAndAppendMessage($"{ReleaseInfo.Title}: downloading {picked.Count} wanted of {Options.ReleaseTrackCount} tracks", LogLevel.Info);
+            return picked.Select(i => songs[i]).ToArray();
         }
 
         private void AddTrackDownloadRequest(AlbumInfo albumInfo, AlbumSong trackInfo, AudioStreamInfo audioStreamInfo, CancellationToken token)

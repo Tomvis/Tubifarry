@@ -1,4 +1,5 @@
 ﻿using Tubifarry.Download.Base;
+using Tubifarry.Download.Clients.Soulseek;
 using YouTubeMusicAPI.Client;
 
 namespace Tubifarry.Download.Clients.YouTube
@@ -48,6 +49,13 @@ namespace Tubifarry.Download.Clients.YouTube
         /// </summary>
         public string? TrustedSessionGeneratorUrl { get; set; }
 
+        /// <summary>
+        /// Tomvis fork (MUSIC-64): the wanted tracks of a partial album (null = all) and the release's track count
+        /// </summary>
+        public List<WantedTrack>? WantedTracks { get; set; }
+
+        public int ReleaseTrackCount { get; set; }
+
         public YouTubeDownloadOptions() { }
 
         protected YouTubeDownloadOptions(YouTubeDownloadOptions options) : base(options)
@@ -60,6 +68,8 @@ namespace Tubifarry.Download.Clients.YouTube
             UseSponsorBlock = options.UseSponsorBlock;
             SponsorBlockApiEndpoint = options.SponsorBlockApiEndpoint;
             TrustedSessionGeneratorUrl = options.TrustedSessionGeneratorUrl;
+            WantedTracks = options.WantedTracks;
+            ReleaseTrackCount = options.ReleaseTrackCount;
         }
     }
 }

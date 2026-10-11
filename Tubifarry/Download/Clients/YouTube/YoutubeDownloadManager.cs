@@ -1,11 +1,13 @@
 ﻿using NLog;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Indexers;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Organizer;
 using NzbDrone.Core.Parser.Model;
 using Tubifarry.Core.FFmpeg;
 using Tubifarry.Core.Records;
 using Tubifarry.Download.Base;
+using Tubifarry.Download.Clients.Soulseek;
 using YouTubeMusicAPI.Client;
 
 namespace Tubifarry.Download.Clients.YouTube
@@ -23,10 +25,12 @@ namespace Tubifarry.Download.Clients.YouTube
         private YouTubeMusicClient? _youTubeClient;
         private SessionTokens? _sessionToken;
         private readonly IAudioProcessingService _audioProcessing;
+        private readonly ITrackService _trackService;
 
-        public YoutubeDownloadManager(IAudioProcessingService audioProcessing, Logger logger) : base(logger)
+        public YoutubeDownloadManager(IAudioProcessingService audioProcessing, ITrackService trackService, Logger logger) : base(logger)
         {
             _audioProcessing = audioProcessing;
+            _trackService = trackService;
             _requesthandler.MaxParallelism = 2;
         }
 
@@ -37,6 +41,7 @@ namespace Tubifarry.Download.Clients.YouTube
             YoutubeClient provider)
         {
             await UpdateClientAsync(provider);
+            (List<WantedTrack>? wanted, int trackCount) = LidarrWantedTracks.For(remoteAlbum, _trackService);
 
             YouTubeDownloadOptions options = new()
             {
@@ -58,7 +63,9 @@ namespace Tubifarry.Download.Clients.YouTube
                 SponsorBlockApiEndpoint = provider.Settings.SponsorBlockApiEndpoint,
                 TrustedSessionGeneratorUrl = provider.Settings.TrustedSessionGeneratorUrl,
                 IsTrack = false,
-                ItemId = remoteAlbum.Release.DownloadUrl
+                ItemId = remoteAlbum.Release.DownloadUrl,
+                WantedTracks = wanted,
+                ReleaseTrackCount = trackCount
             };
 
             return new YouTubeDownloadRequest(remoteAlbum, options);
