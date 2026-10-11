@@ -133,7 +133,7 @@ namespace Tubifarry.Indexers.Soulseek
 
                         List<SlskdFileData> folderFiles = [.. finalGroup];
                         if (Settings.TracklistCheck && !searchTextData.Interactive && !string.IsNullOrEmpty(searchTextData.Album)
-                            && SlskdTracklistCheck.Reject(folderFiles, searchTextData.Tracks, searchTextData.TrackCount, searchTextData.Wanted) is string reason)
+                            && SlskdTracklistCheck.Reject(folderFiles, searchTextData.Tracks, searchTextData.TrackCount, searchTextData.Wanted, searchTextData.TrackLengths) is string reason)
                         {
                             _logger.Debug($"Filtered (tracklist): {response.Username}:{directoryGroup.Key} {reason}");
                             continue;

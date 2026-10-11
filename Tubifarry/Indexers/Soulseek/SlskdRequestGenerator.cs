@@ -79,7 +79,8 @@ namespace Tubifarry.Indexers.Soulseek
                 SearchCriteria: searchCriteria)
             {
                 TrackCounts = trackCounts,
-                Wanted = LidarrWantedTracks.From(trackSource?.Tracks?.Value)
+                Wanted = LidarrWantedTracks.From(trackSource?.Tracks?.Value),
+                TrackLengths = SlskdTracklistCheck.LengthsOf(albumReleases)
             };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
@@ -343,7 +344,8 @@ namespace Tubifarry.Indexers.Soulseek
                 TrackDurations: query.TrackDurations.Count > 0 ? [.. query.TrackDurations] : null,
                 TrackCounts: editionTrackCounts.Count > 0 ? [.. editionTrackCounts] : null,
                 TrackCount: query.TrackCount,
-                Wanted: query.Wanted?.ToList()));
+                Wanted: query.Wanted?.ToList(),
+                TrackLengths: query.TrackLengths?.ToList()));
 
             return request;
         }

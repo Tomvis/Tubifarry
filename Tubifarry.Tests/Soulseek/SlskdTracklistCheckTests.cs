@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using NzbDrone.Core.Music;
 using Tubifarry.Download.Clients.Soulseek;
 using Tubifarry.Indexers.Soulseek;
 using Xunit;
@@ -104,6 +105,79 @@ namespace Tubifarry.Tests.Soulseek
             Assert.Null(SlskdTracklistCheck.Reject(twoTracks, tracks, 6, [new WantedTrack("Lux Æterna", 1, 6, 205_000)]));
             Assert.Equal("lacks wanted \"Screaming Suicide\"",
                 SlskdTracklistCheck.Reject(twoTracks, tracks, 6, [new WantedTrack("Screaming Suicide", 1, 3, 330_000)]));
+        }
+
+        private static List<SlskdFileData> Timed(params (string Name, int Seconds)[] files) =>
+            [.. files.Select(f => new SlskdFileData($@"music\Elvis Presley\Gold Collection Vol. 3\{f.Name}", null, null, 1000, f.Seconds, null, null, 0, false))];
+
+        private static readonly List<string> GoldVol3 = ["I Got Stung", "Hound Dog", "Love Me Tender", "Jailhouse Rock", "Don't Be Cruel", "All Shook Up"];
+
+        private static readonly List<TrackLength> GoldVol3Lengths =
+            [new("igotstung", [111]), new("hounddog", [136, 138]), new("lovemetender", [161]), new("jailhouserock", [146]), new("dontbecruel", [123]), new("allshookup", [118])];
+
+        // MUSIC-73: every "Gold Collection" on Soulseek is a Eurobeat rip renamed to Elvis titles
+        [Fact]
+        public void Right_titles_with_wrong_durations_are_rejected()
+        {
+            List<SlskdFileData> fake = Timed(("01 - I Got Stung.flac", 317), ("02 - Hound Dog.flac", 284), ("03 - Love Me Tender.flac", 165),
+                ("04 - Jailhouse Rock.flac", 301), ("05 - Don't Be Cruel.flac", 296), ("06 - All Shook Up.flac", 270));
+            Assert.Equal("durations miss 5/6 tracks", SlskdTracklistCheck.Reject(fake, GoldVol3, 6, null, GoldVol3Lengths));
+            Assert.Null(SlskdTracklistCheck.Reject(fake, GoldVol3, 6, null, null));
+        }
+
+        [Fact]
+        public void Another_edition_and_a_hidden_track_are_kept()
+        {
+            List<SlskdFileData> real = Timed(("01 - I Got Stung.flac", 112), ("02 - Hound Dog.flac", 138), ("03 - Love Me Tender.flac", 160),
+                ("04 - Jailhouse Rock.flac", 147), ("05 - Don't Be Cruel.flac", 124), ("06 - All Shook Up.flac", 418));
+            Assert.Null(SlskdTracklistCheck.Reject(real, GoldVol3, 6, null, GoldVol3Lengths));
+        }
+
+        // Replay (MUSIC-74): VBR MP3s report 2x, 2.5x, 3.37x their length; Bathory's first CD track merges three songs
+        [Fact]
+        public void Mp3_lengths_and_merged_tracks_are_not_judged()
+        {
+            List<SlskdFileData> vbr = Timed([.. GoldVol3.Select((t, i) => ($"{i + 1:00} - {t}.mp3", 2 * (int)GoldVol3Lengths[i].Seconds[0]))]);
+            Assert.Null(SlskdTracklistCheck.Reject(vbr, GoldVol3, 6, null, GoldVol3Lengths));
+
+            List<string> twilight = ["Twilight of the Gods", "Through Blood by Thunder", "Blood and Iron", "Under the Runes", "To Enter Your Mountain", "Bond of Blood", "Hammerheart"];
+            List<TrackLength> lengths = [new("twilightofthegods", [664]), new("throughbloodbythunder", [406]), new("bloodandiron", [628]),
+                new("undertherunes", [358]), new("toenteryourmountain", [455]), new("bondofblood", [456]), new("hammerheart", [281])];
+            List<SlskdFileData> merged = Timed(("01 - Twilight of the Gods , Through Blood by Thunder , Blood and Iron.flac", 1844), ("02 - Under the Runes.flac", 358),
+                ("03 - To Enter Your Mountain.flac", 455), ("04 - Bond of Blood.flac", 456), ("05 - Hammerheart.flac", 281), ("06 - Outro.flac", 23));
+            Assert.Null(SlskdTracklistCheck.Reject(merged, twilight, 8, null, lengths));
+        }
+
+        [Fact]
+        public void Browsed_folder_lengths_are_not_judged()
+        {
+            List<SlskdFileData> browsed = Timed([.. GoldVol3.Select((t, i) => ($"{i + 1:00} - {t}.flac", 317))]);
+            Assert.Null(SlskdTracklistCheck.Reject(browsed, GoldVol3, 6, null, GoldVol3Lengths));
+        }
+
+        [Fact]
+        public void Wanted_track_with_the_wrong_duration_is_rejected()
+        {
+            List<SlskdFileData> fake = Timed(("01 - I Got Stung.flac", 317), ("02 - Hound Dog.flac", 137));
+            Assert.Equal("wanted \"I Got Stung\" has the wrong duration",
+                SlskdTracklistCheck.Reject(fake, GoldVol3, 6, [new WantedTrack("I Got Stung", 1, 1, 111_000)], GoldVol3Lengths));
+            Assert.Null(SlskdTracklistCheck.Reject(fake, GoldVol3, 6, [new WantedTrack("Hound Dog", 1, 2, 136_000)], GoldVol3Lengths));
+        }
+
+        [Fact]
+        public void Lengths_merge_every_release_and_skip_unknown_durations()
+        {
+            static AlbumRelease Release(bool monitored, params (string Title, int Ms)[] tracks) => new()
+            {
+                Monitored = monitored,
+                Tracks = new([.. tracks.Select(t => new Track { Title = t.Title, Duration = t.Ms })])
+            };
+
+            List<TrackLength>? lengths = SlskdTracklistCheck.LengthsOf(
+                [Release(false, ("Hound Dog", 138_400), ("Bonus", 0)), Release(true, ("Hound Dog", 136_000), ("I Got Stung", 111_000))]);
+
+            Assert.Equal(["hounddog:136,138", "igotstung:111"], lengths!.Select(l => $"{l.Title}:{string.Join(",", l.Seconds)}").Order());
+            Assert.Null(SlskdTracklistCheck.LengthsOf([]));
         }
 
         [Fact]
