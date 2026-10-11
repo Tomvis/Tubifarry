@@ -1,6 +1,7 @@
 using NzbDrone.Core.Indexers;
 using NzbDrone.Core.IndexerSearch.Definitions;
 using NzbDrone.Core.Music;
+using Tubifarry.Download.Clients.Soulseek;
 
 namespace Tubifarry.Indexers.Soulseek.Search.Core;
 
@@ -29,6 +30,7 @@ public sealed record SearchContext
     public IReadOnlyList<string> Aliases { get; init; }
     public IReadOnlyList<string> Tracks { get; init; }
     public IReadOnlyList<int> TrackDurations { get; init; }
+    public IReadOnlyList<WantedTrack>? Wanted { get; init; }
     public SlskdSettings Settings { get; init; }
     public HashSet<string> ProcessedSearches { get; init; }
     public SearchCriteriaBase? SearchCriteria { get; init; }
@@ -93,6 +95,7 @@ public sealed record SearchQuery
     public IReadOnlyList<int> TrackCounts { get; init; } = [];
     public IReadOnlyList<string> Tracks { get; init; } = [];
     public IReadOnlyList<int> TrackDurations { get; init; } = [];
+    public IReadOnlyList<WantedTrack>? Wanted { get; init; }
     public string? SearchText { get; init; }
 
     public static SearchQuery FromContext(SearchContext context) => new()
@@ -105,6 +108,7 @@ public sealed record SearchQuery
         TrackCounts = context.TrackCounts,
         Tracks = context.Tracks,
         TrackDurations = context.TrackDurations,
+        Wanted = context.Wanted,
         SearchText = null
     };
 }

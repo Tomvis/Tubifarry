@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Tubifarry.Core.Utilities;
+using Tubifarry.Download.Clients.Soulseek;
 
 namespace Tubifarry.Indexers.Soulseek
 {
@@ -161,7 +162,9 @@ namespace Tubifarry.Indexers.Soulseek
         [property: JsonPropertyName("maximumFiles")] int? MaximumFiles,
         [property: JsonPropertyName("tracks")] List<string>? Tracks = null,
         [property: JsonPropertyName("trackDurations")] List<int>? TrackDurations = null,
-        [property: JsonPropertyName("trackCounts")] List<int>? TrackCounts = null)
+        [property: JsonPropertyName("trackCounts")] List<int>? TrackCounts = null,
+        [property: JsonPropertyName("trackCount")] int TrackCount = 0,
+        [property: JsonPropertyName("wanted")] List<WantedTrack>? Wanted = null)
     {
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         public static SlskdSearchData FromJson(string jsonString) => JsonSerializer.Deserialize<SlskdSearchData>(jsonString, _jsonOptions)!;

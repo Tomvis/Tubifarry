@@ -132,6 +132,13 @@ namespace Tubifarry.Indexers.Soulseek
                         }
 
                         List<SlskdFileData> folderFiles = [.. finalGroup];
+                        if (Settings.TracklistCheck && !searchTextData.Interactive && !string.IsNullOrEmpty(searchTextData.Album)
+                            && SlskdTracklistCheck.Reject(folderFiles, searchTextData.Tracks, searchTextData.TrackCount, searchTextData.Wanted) is string reason)
+                        {
+                            _logger.Debug($"Filtered (tracklist): {response.Username}:{directoryGroup.Key} {reason}");
+                            continue;
+                        }
+
                         int expectedTrackCount = GetClosestEditionTrackCount(searchTextData.TrackCounts, folderFiles.Count(IsAudioFile));
                         AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData with { Files = folderFiles }, Settings, expectedTrackCount);
                         albumDatas.Add(albumData);

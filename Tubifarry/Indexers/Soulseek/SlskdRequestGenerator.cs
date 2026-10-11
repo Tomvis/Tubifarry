@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using Tubifarry.Core.Replacements;
 using Tubifarry.Core.Telemetry;
 using Tubifarry.Core.Utilities;
+using Tubifarry.Download.Clients.Soulseek;
 using Tubifarry.Indexers.Soulseek.Search.Core;
 
 namespace Tubifarry.Indexers.Soulseek
@@ -77,7 +78,8 @@ namespace Tubifarry.Indexers.Soulseek
                 ProcessedSearches: _processedSearches,
                 SearchCriteria: searchCriteria)
             {
-                TrackCounts = trackCounts
+                TrackCounts = trackCounts,
+                Wanted = LidarrWantedTracks.From(trackSource?.Tracks?.Value)
             };
 
             return _searchPipeline.BuildChain(context, ExecuteSearch);
@@ -339,7 +341,9 @@ namespace Tubifarry.Indexers.Soulseek
                 MaximumFiles: maximumFiles,
                 Tracks: query.Tracks.Take(50).ToList(),
                 TrackDurations: query.TrackDurations.Count > 0 ? [.. query.TrackDurations] : null,
-                TrackCounts: editionTrackCounts.Count > 0 ? [.. editionTrackCounts] : null));
+                TrackCounts: editionTrackCounts.Count > 0 ? [.. editionTrackCounts] : null,
+                TrackCount: query.TrackCount,
+                Wanted: query.Wanted?.ToList()));
 
             return request;
         }

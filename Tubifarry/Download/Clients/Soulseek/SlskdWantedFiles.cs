@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using System.Text.RegularExpressions;
+using FuzzySharp;
 using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using Tubifarry.Core.Utilities;
@@ -23,13 +24,18 @@ public static class LidarrWantedTracks
             return (null, 0);
 
         List<Track> tracks = trackService.GetTracksByAlbum(remoteAlbum.Albums[0].Id);
-        if (tracks.All(IsWanted))
-            return (null, tracks.Count);
+        return (From(tracks), tracks.Count);
+    }
 
-        List<WantedTrack> wanted = tracks.Where(IsWanted)
+    // The wanted subset of a release's tracks, or null when all (or, on upstream Lidarr, any) are wanted
+    public static List<WantedTrack>? From(IReadOnlyList<Track>? tracks)
+    {
+        if (Monitored == null || tracks == null || tracks.All(IsWanted))
+            return null;
+
+        return tracks.Where(IsWanted)
             .Select(t => new WantedTrack(t.Title, t.MediumNumber, t.AbsoluteTrackNumber, t.Duration))
             .ToList();
-        return (wanted, tracks.Count);
     }
 
     private static bool IsWanted(Track track) => (bool)Monitored!.GetValue(track)!;
@@ -38,6 +44,7 @@ public static class LidarrWantedTracks
 public static partial class SlskdWantedFileFilter
 {
     private const int DurationToleranceSec = 10;
+    private const int FuzzyTitleRatio = 85;
 
     private record Candidate(SlskdFileData File, HashSet<string> Titles, int Disc, int Number, int? Seconds);
 
@@ -57,7 +64,7 @@ public static partial class SlskdWantedFileFilter
         List<SlskdFileData> picked = [];
         foreach (WantedTrack want in wanted)
         {
-            Candidate? match = ByTitle(audio, want) ?? ByPosition(audio, want, releaseTrackCount);
+            Candidate? match = ByTitle(audio, want) ?? ByPosition(audio, want, releaseTrackCount) ?? ByFuzzyTitle(audio, want);
             if (match == null)
                 return null;
 
@@ -88,13 +95,56 @@ public static partial class SlskdWantedFileFilter
         return audio.FirstOrDefault(c => c.Disc == want.Disc && c.Number == want.Number && c.Seconds > 0 && DurationFits(c, want));
     }
 
+    // Last resort: spelling differences ("Gena Lollabridgida", "The Long Road Part 1") that MUSIC-72's check accepts
+    private static Candidate? ByFuzzyTitle(List<Candidate> audio, WantedTrack want)
+    {
+        HashSet<string> variants = TitleVariants(want.Title);
+        return audio.Where(c => DurationFits(c, want) && TitleMatches(variants, c.Titles))
+            .OrderBy(c => DurationGap(c, want))
+            .FirstOrDefault();
+    }
+
+    // Expected title forms: the whole title, and the movement after "Work: " ("The Mission: The Falls" -> "The Falls")
+    public static HashSet<string> TitleVariants(string? title)
+    {
+        HashSet<string> variants = [Normalize(title)];
+        int colon = title?.LastIndexOf(':') ?? -1;
+        if (colon >= 0)
+            variants.Add(Normalize(title![(colon + 1)..]));
+        variants.Remove(string.Empty);
+        return variants;
+    }
+
+    // Exact, containment ("Drench" in "DrenchXW - Ghost II") or near-identical spelling
+    public static bool TitleMatches(HashSet<string> variants, HashSet<string> fileTitles)
+    {
+        foreach (string expected in variants)
+        {
+            foreach (string title in fileTitles)
+            {
+                if (expected == title)
+                    return true;
+
+                (string shorter, string longer) = expected.Length <= title.Length ? (expected, title) : (title, expected);
+                if (shorter.Length < 4)
+                    continue;
+                if (longer.Contains(shorter, StringComparison.Ordinal))
+                    return true;
+                if (shorter.Length >= longer.Length * 0.74 && Fuzz.Ratio(expected, title) >= FuzzyTitleRatio)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool DurationFits(Candidate c, WantedTrack want) =>
         want.DurationMs <= 0 || c.Seconds is not > 0 || DurationGap(c, want) <= DurationToleranceSec;
 
     private static int DurationGap(Candidate c, WantedTrack want) =>
         Math.Abs((c.Seconds ?? 0) - (int)Math.Round(want.DurationMs / 1000.0));
 
-    private static bool IsAudio(SlskdFileData file) =>
+    public static bool IsAudio(SlskdFileData file) =>
         AudioFormatHelper.GetAudioCodecFromExtension(
             (!string.IsNullOrWhiteSpace(file.Extension) ? file.Extension : Path.GetExtension(file.Filename ?? "")).TrimStart('.')) != AudioFormat.Unknown;
 
@@ -126,6 +176,13 @@ public static partial class SlskdWantedFileFilter
             disc = parent.Success ? int.Parse(parent.Groups["disc"].Value) : 1;
         }
 
+        return new Candidate(file, TitleCandidates(stem), disc, number, file.Length);
+    }
+
+    // "Artist - Album - 06 - Title" or "Artist_Album_06_Title": every suffix after a separator may be the title
+    public static HashSet<string> TitleCandidates(string stem)
+    {
+        string[] parts = SegmentSeparator().Split(stem);
         HashSet<string> titles = [];
         for (int i = 0; i < parts.Length; i++)
         {
@@ -138,7 +195,16 @@ public static partial class SlskdWantedFileFilter
                 titles.Add(rest);
         }
 
-        return new Candidate(file, titles, disc, number, file.Length);
+        if (stem.Contains('_'))
+        {
+            foreach (string part in stem.Split('_', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (Normalize(LeadingNumber().Replace(part + " ", "", 1)) is { Length: > 0 } title)
+                    titles.Add(title);
+            }
+        }
+
+        return titles;
     }
 
     // "Song (feat. X) [2009 Remaster]" and "Song - 2009 Remaster" both become "song"; "Lux Æterna" = "Lux Aeterna"

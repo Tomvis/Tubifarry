@@ -188,6 +188,10 @@ namespace Tubifarry.Indexers.Soulseek
         [FieldDefinition(27, Type = FieldType.Checkbox, Label = "Show Priority in Title", HelpText = "Append the calculated release priority to the release title (e.g. [Priority 4200]).", Advanced = true)]
         public bool ShowPriorityInTitle { get; set; }
 
+        // Tomvis fork (MUSIC-72)
+        [FieldDefinition(28, Type = FieldType.Checkbox, Label = "Tracklist Check", HelpText = "Skip folders whose file titles don't cover the album's tracklist (or a wanted track). Not applied to interactive searches.", Advanced = true)]
+        public bool TracklistCheck { get; set; } = true;
+
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
 
