@@ -82,8 +82,8 @@ namespace Tubifarry.Download.Clients.YouTube
 
                 try
                 {
-                    // Tomvis fork (MUSIC-64): a video-bound token swaps VisitorData for the video id, which a signed-in
-                    // session rejects ("This media stream is not playable"); the session token works there.
+                    // Tomvis fork (MUSIC-64): the video-bound update sets VisitorData to the token's content binding (the
+                    // video id). Signed-in downloads are verified with the session token only, so keep it there.
                     if (!Options.SignedIn)
                         await TryUpdateVideoBoundTokensAsync(trackInfo.Id, token);
 
