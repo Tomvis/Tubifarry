@@ -165,7 +165,8 @@ namespace Tubifarry.Indexers.Soulseek
         [property: JsonPropertyName("trackCounts")] List<int>? TrackCounts = null,
         [property: JsonPropertyName("trackCount")] int TrackCount = 0,
         [property: JsonPropertyName("wanted")] List<WantedTrack>? Wanted = null,
-        [property: JsonPropertyName("trackLengths")] List<TrackLength>? TrackLengths = null)
+        [property: JsonPropertyName("trackLengths")] List<TrackLength>? TrackLengths = null,
+        [property: JsonPropertyName("editions")] List<SlskdEdition>? Editions = null)
     {
         private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
         public static SlskdSearchData FromJson(string jsonString) => JsonSerializer.Deserialize<SlskdSearchData>(jsonString, _jsonOptions)!;

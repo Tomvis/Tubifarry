@@ -132,7 +132,21 @@ namespace Tubifarry.Indexers.Soulseek
                         }
 
                         List<SlskdFileData> folderFiles = [.. finalGroup];
-                        if (Settings.TracklistCheck && !searchTextData.Interactive && !string.IsNullOrEmpty(searchTextData.Album)
+                        bool tracklistCheck = Settings.TracklistCheck && !searchTextData.Interactive && !string.IsNullOrEmpty(searchTextData.Album);
+                        string? editionLabel = null;
+                        if (searchTextData.Editions is { Count: > 1 } editions)
+                        {
+                            // MUSIC-68: fit the folder to each monitored edition; Lidarr reads the edition from the title
+                            (SlskdEdition? edition, string? reason) = SlskdEditions.Fit(folderFiles, editions);
+                            if (edition == null && tracklistCheck)
+                            {
+                                _logger.Debug($"Filtered (tracklist): {response.Username}:{directoryGroup.Key} {reason}");
+                                continue;
+                            }
+                            if (edition is { Primary: false })
+                                editionLabel = edition.Label;
+                        }
+                        else if (tracklistCheck
                             && SlskdTracklistCheck.Reject(folderFiles, searchTextData.Tracks, searchTextData.TrackCount, searchTextData.Wanted, searchTextData.TrackLengths) is string reason)
                         {
                             _logger.Debug($"Filtered (tracklist): {response.Username}:{directoryGroup.Key} {reason}");
@@ -140,7 +154,7 @@ namespace Tubifarry.Indexers.Soulseek
                         }
 
                         int expectedTrackCount = GetClosestEditionTrackCount(searchTextData.TrackCounts, folderFiles.Count(IsAudioFile));
-                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData with { Files = folderFiles }, Settings, expectedTrackCount);
+                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData with { Files = folderFiles }, Settings, expectedTrackCount, editionLabel);
                         albumDatas.Add(albumData);
                     }
                 }

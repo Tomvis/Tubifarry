@@ -21,23 +21,11 @@ public static partial class SlskdTracklistCheck
     public static string? Reject(IReadOnlyList<SlskdFileData> files, IReadOnlyList<string>? tracks, int trackCount, IReadOnlyList<WantedTrack>? wanted,
         IReadOnlyList<TrackLength>? lengths = null)
     {
-        List<AudioFile> audio = files.Where(SlskdWantedFileFilter.IsAudio)
-            .Select(f => new AudioFile(SlskdWantedFileFilter.TitleCandidates(Stem(f)), ReportedLength(f)))
-            .ToList();
-        if (audio.Count == 0 || tracks is not { Count: > 0 } || Uninformative(files))
+        List<AudioFile>? audio = Audio(files, tracks);
+        if (audio == null || tracks == null)
             return null;
 
-        // A browsed folder (indexer's directory expansion) copies the search hit's length onto every file
-        if (audio.Count > 1 && audio.All(f => f.Seconds == audio[0].Seconds))
-            audio = audio.Select(f => f with { Seconds = null }).ToList();
-
-        // A file named after several tracks holds them merged ("Twilight of the Gods, Through Blood by Thunder, ...")
-        List<HashSet<string>> trackVariants = tracks.Select(SlskdWantedFileFilter.TitleVariants).ToList();
-        audio = audio.Select(f => f.Seconds != null && trackVariants.Count(v => SlskdWantedFileFilter.TitleMatches(v, f.Titles)) > 1
-            ? f with { Seconds = null }
-            : f).ToList();
-
-        Dictionary<string, List<int>> known = lengths?.ToDictionary(l => l.Title, l => l.Seconds) ?? [];
+        Dictionary<string, List<int>> known = Known(lengths);
 
         // Partial album (MUSIC-64): every wanted track must be there; extra files are skipped at enqueue
         if (wanted is { Count: > 0 })
@@ -66,6 +54,53 @@ public static partial class SlskdTracklistCheck
 
         return null;
     }
+
+    // Mean seconds between the folder's files and the closest known duration of their tracks; null when nothing compares.
+    // Editions often differ by only a few seconds a track (Ihsahn orchestral: 1-9 s), inside the check's tolerance.
+    public static double? Deviation(IReadOnlyList<SlskdFileData> files, IReadOnlyList<string>? tracks, IReadOnlyList<TrackLength>? lengths)
+    {
+        List<AudioFile>? audio = Audio(files, tracks);
+        if (audio == null || tracks == null)
+            return null;
+
+        Dictionary<string, List<int>> known = Known(lengths);
+        List<int> gaps = [];
+        foreach (string track in tracks)
+        {
+            if (!known.TryGetValue(SlskdWantedFileFilter.Normalize(track), out List<int>? expected))
+                continue;
+
+            HashSet<string> variants = SlskdWantedFileFilter.TitleVariants(track);
+            gaps.AddRange(audio.Where(f => f.Seconds > 0 && SlskdWantedFileFilter.TitleMatches(variants, f.Titles))
+                .Select(f => expected.Min(e => Math.Abs(f.Seconds!.Value - e)))
+                .Take(1));
+        }
+
+        return gaps.Count == 0 ? null : gaps.Average();
+    }
+
+    // The folder's audio files with the lengths worth comparing; null when there is nothing to check
+    private static List<AudioFile>? Audio(IReadOnlyList<SlskdFileData> files, IReadOnlyList<string>? tracks)
+    {
+        List<AudioFile> audio = files.Where(SlskdWantedFileFilter.IsAudio)
+            .Select(f => new AudioFile(SlskdWantedFileFilter.TitleCandidates(Stem(f)), ReportedLength(f)))
+            .ToList();
+        if (audio.Count == 0 || tracks is not { Count: > 0 } || Uninformative(files))
+            return null;
+
+        // A browsed folder (indexer's directory expansion) copies the search hit's length onto every file
+        if (audio.Count > 1 && audio.All(f => f.Seconds == audio[0].Seconds))
+            audio = audio.Select(f => f with { Seconds = null }).ToList();
+
+        // A file named after several tracks holds them merged ("Twilight of the Gods, Through Blood by Thunder, ...")
+        List<HashSet<string>> trackVariants = tracks.Select(SlskdWantedFileFilter.TitleVariants).ToList();
+        return audio.Select(f => f.Seconds != null && trackVariants.Count(v => SlskdWantedFileFilter.TitleMatches(v, f.Titles)) > 1
+            ? f with { Seconds = null }
+            : f).ToList();
+    }
+
+    private static Dictionary<string, List<int>> Known(IReadOnlyList<TrackLength>? lengths) =>
+        lengths?.ToDictionary(l => l.Title, l => l.Seconds) ?? [];
 
     // Every distinct duration each title has on any of the album's releases (editions differ: remasters, edits,
     // live versions), so a folder of another edition still fits. Null when there is nothing to compare.

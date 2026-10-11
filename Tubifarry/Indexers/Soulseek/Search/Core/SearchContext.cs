@@ -32,6 +32,7 @@ public sealed record SearchContext
     public IReadOnlyList<int> TrackDurations { get; init; }
     public IReadOnlyList<WantedTrack>? Wanted { get; init; }
     public IReadOnlyList<TrackLength>? TrackLengths { get; init; }
+    public IReadOnlyList<SlskdEdition>? Editions { get; init; }
     public SlskdSettings Settings { get; init; }
     public HashSet<string> ProcessedSearches { get; init; }
     public SearchCriteriaBase? SearchCriteria { get; init; }
@@ -98,6 +99,7 @@ public sealed record SearchQuery
     public IReadOnlyList<int> TrackDurations { get; init; } = [];
     public IReadOnlyList<WantedTrack>? Wanted { get; init; }
     public IReadOnlyList<TrackLength>? TrackLengths { get; init; }
+    public IReadOnlyList<SlskdEdition>? Editions { get; init; }
     public string? SearchText { get; init; }
 
     public static SearchQuery FromContext(SearchContext context) => new()
@@ -112,6 +114,7 @@ public sealed record SearchQuery
         TrackDurations = context.TrackDurations,
         Wanted = context.Wanted,
         TrackLengths = context.TrackLengths,
+        Editions = context.Editions,
         SearchText = null
     };
 }
