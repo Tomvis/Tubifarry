@@ -57,6 +57,10 @@ public static class SlskdEditions
         if (fits.Count == 0)
             return (null, string.Join("; ", reasons));
 
+        // No audio (cover scans, guitar tabs) says nothing about the edition; the check passes it on to Lidarr as is
+        if (audio == 0)
+            return (fits.Find(f => f.Edition.Primary).Edition ?? fits[0].Edition, null);
+
         int fewestGap = fits.Min(f => Math.Abs(audio - f.Edition.TrackCount));
         fits = fits.Where(f => Math.Abs(audio - f.Edition.TrackCount) == fewestGap).ToList();
 

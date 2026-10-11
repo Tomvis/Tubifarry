@@ -101,6 +101,14 @@ namespace Tubifarry.Tests.Soulseek
             Assert.True(SlskdEditions.Fit(Folder("flac", IhsahnOrchestral, reportedLength: 300), editions).Edition?.Primary);
         }
 
+        // Live 10-11: a "Cover" subfolder and a guitar-tabs folder were tagged as the 8-track instrumental
+        [Fact]
+        public void Folder_without_audio_is_the_primary()
+        {
+            List<SlskdFileData> covers = [new(@"music\Artist\Alaska (2005)\Cover\front.jpg", null, null, 1000, null, null, null, 0, false)];
+            Assert.True(SlskdEditions.Fit(covers, SlskdEditions.Of(Alaska)!).Edition?.Primary);
+        }
+
         [Fact]
         public void Folder_fitting_no_edition_is_rejected_with_each_reason()
         {
