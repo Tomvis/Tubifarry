@@ -4,6 +4,7 @@ using NzbDrone.Common.Instrumentation;
 using NzbDrone.Core.Download;
 using NzbDrone.Core.Download.Clients;
 using NzbDrone.Core.Download.History;
+using NzbDrone.Core.Music;
 using NzbDrone.Core.Parser.Model;
 using NzbDrone.Core.RemotePathMappings;
 using System.Collections.Concurrent;
@@ -39,6 +40,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
     private readonly IDownloadHistoryRepository _downloadHistoryRepository;
     private readonly ISlskdItemsParser _slskdItemsParser;
     private readonly ISentryHelper _sentry;
+    private readonly ITrackService _trackService;
     private readonly Logger _logger;
     private readonly SlskdRetryHandler _retryHandler;
     private readonly SlskdGrabMatcher _grabMatcher;
@@ -52,6 +54,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         ISlskdItemsParser slskdItemsParser,
         IRemotePathMappingService remotePathMappingService,
         IDiskProvider diskProvider,
+        ITrackService trackService,
         ISentryHelper sentry,
         Logger logger)
     {
@@ -59,6 +62,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _downloadHistoryRepository = downloadHistoryRepository;
         _slskdItemsParser = slskdItemsParser;
         _sentry = sentry;
+        _trackService = trackService;
         _logger = logger;
         _retryHandler = new SlskdRetryHandler(apiClient, sentry, NzbDroneLogger.GetLogger(typeof(SlskdRetryHandler)));
         _grabMatcher = new SlskdGrabMatcher(NzbDroneLogger.GetLogger(typeof(SlskdGrabMatcher)));
@@ -73,6 +77,7 @@ public class SlskdDownloadManager : ISlskdDownloadManager
         _settingsCache[definitionId] = settings;
 
         SlskdDownloadItem item = new(remoteAlbum.Release) { ID = Guid.NewGuid().ToString("N"), GrabbedAt = DateTime.UtcNow };
+        KeepOnlyWantedFiles(remoteAlbum, item);
         _logger.Trace($"Download initiated: {remoteAlbum.Release.Title} | Files: {item.FileData.Count}");
 
         ISpan? span = _sentry.StartSpan("slskd.download", remoteAlbum.Release.Title);
@@ -113,6 +118,26 @@ public class SlskdDownloadManager : ISlskdDownloadManager
             _sentry.FinishSpan(span, ex);
             throw;
         }
+    }
+
+    // Tomvis fork (MUSIC-64): a partial album enqueues only the wanted tracks. The release's Source is rewritten
+    // too, so the grab history (restart recovery, transfer matching) knows only those files.
+    private void KeepOnlyWantedFiles(RemoteAlbum remoteAlbum, SlskdDownloadItem item)
+    {
+        (List<WantedTrack>? wanted, int trackCount) = LidarrWantedTracks.For(remoteAlbum, _trackService);
+        if (wanted == null)
+            return;
+
+        List<SlskdFileData>? files = SlskdWantedFileFilter.Select(item.FileData, wanted, trackCount);
+        if (files == null)
+        {
+            _logger.Info($"{remoteAlbum.Release.Title}: {wanted.Count} of {trackCount} tracks wanted, but not all match a file; downloading the whole folder");
+            return;
+        }
+
+        _logger.Info($"{remoteAlbum.Release.Title}: downloading {files.Count} wanted of {trackCount} tracks");
+        item.FileData = files;
+        remoteAlbum.Release.Source = JsonSerializer.Serialize(files);
     }
 
     public IEnumerable<DownloadClientItem> GetItems(int definitionId, SlskdProviderSettings settings, OsPath remotePath)
