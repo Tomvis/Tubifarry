@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using NzbDrone.Core.Music;
@@ -51,8 +52,8 @@ namespace Tubifarry.Tests.Soulseek
             Release(84482, "Ihsahn (orchestral)", true, IhsahnOrchestral),
             Release(84485, "Ihsahn", true, IhsahnMain));
 
-        private static List<SlskdFileData> Folder(string extension, (string Title, int Seconds)[] tracks, int? reportedLength = null) =>
-            [.. tracks.Select((t, i) => new SlskdFileData($@"music\Artist\Album\{i + 1:00} - {t.Title}.{extension}", null, null, 1000,
+        private static List<SlskdFileData> Folder(string extension, (string Title, int Seconds)[] tracks, int? reportedLength = null, string folder = "Album", string suffix = "") =>
+            [.. tracks.Select((t, i) => new SlskdFileData($@"music\Artist\{folder}\{i + 1:00} - {t.Title}{suffix}.{extension}", null, null, 1000,
                 reportedLength ?? t.Seconds, null, null, 0, false))];
 
         [Fact]
@@ -126,6 +127,105 @@ namespace Tubifarry.Tests.Soulseek
             List<SlskdEdition> editions = SlskdEditions.Of(Alaska)!;
             Assert.NotNull(SlskdTracklistCheck.Reject(Folder("flac", AlaskaInstrumental), [.. AlaskaMain.Select(t => t.Title)], 11, null));
             Assert.NotNull(SlskdEditions.Fit(Folder("flac", AlaskaInstrumental), editions).Edition);
+        }
+
+        // MUSIC-104: a held edition (Tomvis/Lidarr MUSIC-102) is a bestedition target, usually the album from another
+        // mastering: same title, same tracklist, durations a second or so apart
+        private static AlbumRelease Mastering(int id, int year, string country, (string Title, int Seconds)[] tracks, int shift = 0) => new()
+        {
+            Id = id,
+            Title = "Alaska",
+            Disambiguation = "",
+            Monitored = true,
+            ReleaseDate = new DateTime(year, 1, 1),
+            Country = [country],
+            Label = ["Victory Records"],
+            Media = [new Medium { Number = 1, Format = "CD" }],
+            TrackCount = tracks.Length,
+            Tracks = new([.. tracks.Select(t => new Track { Title = t.Title, Duration = (t.Seconds + shift) * 1000 })])
+        };
+
+        private static readonly (string Title, int Seconds)[] AlaskaRemaster = [.. AlaskaMain.Select(t => (t.Title, t.Seconds + 1))];
+
+        // The held remaster has the lower id, which made it the primary before
+        private static readonly Album AlaskaHeld = new()
+        {
+            Title = "Alaska",
+            ReleaseDate = new DateTime(2005, 9, 6),
+            AlbumReleases = new([Mastering(90001, 2012, "Japan", AlaskaMain, shift: 1), Mastering(76903, 2005, "United States", AlaskaMain)])
+        };
+
+        private static List<SlskdEdition> HeldEditions() => SlskdEditions.Of(AlaskaHeld, r => r.Id == 90001)!;
+
+        private static SlskdEdition? FitHeld(string folder, string suffix = "", (string Title, int Seconds)[]? tracks = null) =>
+            SlskdEditions.Fit(Folder("flac", tracks ?? AlaskaMain, folder: folder, suffix: suffix), HeldEditions()).Edition;
+
+        [Fact]
+        public void Held_edition_is_never_the_primary_and_is_named_like_Lidarr_names_it()
+        {
+            List<SlskdEdition> editions = HeldEditions();
+            Assert.Equal(["Alaska (2012 CD Japan):held", "Alaska:primary"],
+                editions.Select(e => $"{e.Label}:{(e.Primary ? "primary" : e.Held ? "held" : "extra")}"));
+            Assert.Equal(2012, editions[0].Year);
+        }
+
+        // Upstream Lidarr has no Held: nothing is held and the primary is picked as before
+        [Fact]
+        public void Held_is_read_from_Lidarr_when_it_has_it()
+        {
+            List<SlskdEdition> editions = SlskdEditions.Of(AlaskaHeld)!;
+            Assert.DoesNotContain(editions, e => e.Held);
+            Assert.Equal(1, editions.Count(e => e.Primary));
+        }
+
+        // Durations can't tell masterings apart: the remaster's own durations still go to the primary
+        [Fact]
+        public void Folder_fitting_both_without_clues_is_the_primary()
+        {
+            Assert.True(FitHeld("Between the Buried and Me - Alaska", tracks: AlaskaRemaster)?.Primary);
+            Assert.True(FitHeld("Alaska")?.Primary);
+        }
+
+        // ...and clues beat durations: the original's durations in a folder named after the remaster are the remaster
+        [Theory]
+        [InlineData("Alaska (2012)")]
+        [InlineData("Between the Buried and Me - Alaska [2012 Remaster] FLAC")]
+        [InlineData("Alaska (Remastered)")]
+        [InlineData("Alaska [Japanese Edition]")]
+        [InlineData("Alaska (2005) [2012 Remaster]")]
+        public void Folder_naming_the_held_editions_data_is_the_held_one(string folder)
+        {
+            Assert.True(FitHeld(folder)?.Held);
+        }
+
+        [Fact]
+        public void File_names_carry_clues_too()
+        {
+            Assert.True(FitHeld("Alaska", suffix: " (2012 Remaster)")?.Held);
+        }
+
+        // Victory Records and CD are on both editions, the original's year is the primary's, and a tie is no evidence
+        [Theory]
+        [InlineData("Alaska [CD] Victory Records")]
+        [InlineData("Alaska (2005)")]
+        [InlineData("Alaska (2005) [Japan]")]
+        public void Clues_the_primary_shares_or_matches_are_no_evidence(string folder)
+        {
+            Assert.False(FitHeld(folder)?.Held);
+        }
+
+        [Fact]
+        public void Two_held_editions_named_equally_go_to_the_primary()
+        {
+            Album album = new()
+            {
+                Title = "Alaska",
+                ReleaseDate = new DateTime(2005, 9, 6),
+                AlbumReleases = new([Mastering(90001, 2012, "Japan", AlaskaMain), Mastering(90002, 2012, "Germany", AlaskaMain), Mastering(76903, 2005, "United States", AlaskaMain)])
+            };
+            List<SlskdEdition> editions = SlskdEditions.Of(album, r => r.Id > 90000)!;
+            Assert.True(SlskdEditions.Fit(Folder("flac", AlaskaMain, folder: "Alaska (2012 Remaster)"), editions).Edition?.Primary);
+            Assert.Equal("Alaska (2012 CD Germany)", SlskdEditions.Fit(Folder("flac", AlaskaMain, folder: "Alaska (2012 German Remaster)"), editions).Edition?.Label);
         }
     }
 }

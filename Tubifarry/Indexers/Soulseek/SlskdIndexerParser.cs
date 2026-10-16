@@ -134,6 +134,7 @@ namespace Tubifarry.Indexers.Soulseek
                         List<SlskdFileData> folderFiles = [.. finalGroup];
                         bool tracklistCheck = Settings.TracklistCheck && !searchTextData.Interactive && !string.IsNullOrEmpty(searchTextData.Album);
                         string? editionLabel = null;
+                        string folderYear = folderData.Year;
                         if (searchTextData.Editions is { Count: > 1 } editions)
                         {
                             // MUSIC-68: fit the folder to each monitored edition; Lidarr reads the edition from the title
@@ -145,6 +146,9 @@ namespace Tubifarry.Indexers.Soulseek
                             }
                             if (edition is { Primary: false })
                                 editionLabel = edition.Label;
+                            // MUSIC-104: the folder's year may be the original's, which Lidarr would read as the primary
+                            if (edition is { Held: true, Year: int heldYear })
+                                folderYear = heldYear.ToString();
                         }
                         else if (tracklistCheck
                             && SlskdTracklistCheck.Reject(folderFiles, searchTextData.Tracks, searchTextData.TrackCount, searchTextData.Wanted, searchTextData.TrackLengths) is string reason)
@@ -154,7 +158,7 @@ namespace Tubifarry.Indexers.Soulseek
                         }
 
                         int expectedTrackCount = GetClosestEditionTrackCount(searchTextData.TrackCounts, folderFiles.Count(IsAudioFile));
-                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData with { Files = folderFiles }, Settings, expectedTrackCount, editionLabel);
+                        AlbumData albumData = _itemsParser.CreateAlbumData(searchResponse.Id, finalGroup, searchTextData, folderData with { Files = folderFiles, Year = folderYear }, Settings, expectedTrackCount, editionLabel);
                         albumDatas.Add(albumData);
                     }
                 }
