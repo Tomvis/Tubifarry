@@ -135,6 +135,11 @@ namespace Tubifarry.Indexers.Soulseek
                         bool tracklistCheck = Settings.TracklistCheck && !searchTextData.Interactive && !string.IsNullOrEmpty(searchTextData.Album);
                         string? editionLabel = null;
                         string folderYear = folderData.Year;
+                        if (tracklistCheck && SlskdTracklistCheck.OtherArtists(folderFiles, searchTextData.Tracks, searchTextData.Artist) is string byOthers)
+                        {
+                            _logger.Debug($"Filtered (tracklist): {response.Username}:{directoryGroup.Key} {byOthers}");
+                            continue;
+                        }
                         if (searchTextData.Editions is { Count: > 1 } editions)
                         {
                             // MUSIC-68: fit the folder to each monitored edition; Lidarr reads the edition from the title

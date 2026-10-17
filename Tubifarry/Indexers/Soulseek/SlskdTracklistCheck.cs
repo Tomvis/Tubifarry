@@ -55,6 +55,69 @@ public static partial class SlskdTracklistCheck
         return null;
     }
 
+    // MUSIC-104: a covers album ("Kerrang! Presents 'Remastered'": "01 - Machine Head - Battery") fits the tracklist and its
+    // durations. The segment before each file's title names its artist; reject when nearly every file names a different
+    // artist and the album's own artist names under half of them. Replayed on 930 imported slskd folders: none rejected.
+    // Kept: featured guests, Various Artists, splits (folder says "split" or lists the artists), "0101"/"A2"/"Album (2003) 03"
+    // numbering, and work prefixes ("Sergio Leone Suite - Deborah's Theme" for "Sergio Leone Suite: Deborah's Theme").
+    public static string? OtherArtists(IReadOnlyList<SlskdFileData> files, IReadOnlyList<string>? tracks, string? artist)
+    {
+        string own = SlskdWantedFileFilter.Normalize(artist);
+        if (own.Length == 0 || tracks is not { Count: > 0 } || SlskdTextProcessor.IsVariousArtists(artist!))
+            return null;
+
+        List<HashSet<string>> trackVariants = tracks.Select(SlskdWantedFileFilter.TitleVariants).ToList();
+        HashSet<string> works = tracks.Where(t => t.Contains(':')).Select(t => SlskdWantedFileFilter.Normalize(t[..t.IndexOf(':')])).ToHashSet();
+        List<(string Name, string Key)> named = files.Where(SlskdWantedFileFilter.IsAudio)
+            .Select(f => ArtistSegment(Stem(f), trackVariants))
+            .OfType<string>()
+            .Where(n => !works.Contains(SlskdWantedFileFilter.Normalize(n)))
+            .Select(n => (n, Digits().Replace(SlskdWantedFileFilter.Normalize(n), "")))
+            .Where(n => n.Item2.Length >= 3)
+            .ToList();
+        if (named.Count < 3)
+            return null;
+
+        int ownFiles = named.Count(n => SameArtist(n.Key, own));
+        List<(string Name, string Key)> others = named.Where(n => !SameArtist(n.Key, own)).DistinctBy(n => n.Key).ToList();
+        if (others.Count < 3 || others.Count < named.Count * 0.75 || ownFiles * 2 >= named.Count)
+            return null;
+
+        string folder = Path.GetFileName(Path.GetDirectoryName((files[0].Filename ?? "").Replace('\\', '/')) ?? "");
+        string folderKey = SlskdWantedFileFilter.Normalize(folder);
+        if (SplitWord().IsMatch(folder) || others.Any(o => folderKey.Contains(o.Key, StringComparison.Ordinal)))
+            return null;
+
+        return $"files by other artists ({string.Join(", ", others.Take(3).Select(o => o.Name))}{(others.Count > 3 ? ", …" : "")})";
+    }
+
+    // "01 - Machine Head - Battery" -> "Machine Head": the segment just before the one where a track title starts.
+    // The title is the longest suffix equal to a track title, else the shortest that matches one loosely
+    // (containment would find "Battery" in "Machine Head - Battery" too).
+    private static string? ArtistSegment(string stem, List<HashSet<string>> trackVariants)
+    {
+        string[] parts = SegmentSeparator().Split(stem);
+        List<(int Start, string Title)> suffixes = Enumerable.Range(1, Math.Max(0, parts.Length - 1))
+            .Select(i => (i, SlskdWantedFileFilter.Normalize(string.Join(" - ", parts[i..]))))
+            .ToList();
+        int start = suffixes.Where(s => trackVariants.Any(v => v.Contains(s.Title))).Select(s => s.Start).DefaultIfEmpty(0).First();
+        if (start == 0)
+        {
+            start = suffixes.Where(s => trackVariants.Any(v => SlskdWantedFileFilter.TitleMatches(v, [s.Title])))
+                .Select(s => s.Start).DefaultIfEmpty(0).Last();
+        }
+
+        if (start == 0)
+            return null;
+
+        string segment = LeadingNumber().Replace(parts[start - 1], "").Trim();
+        return SlskdWantedFileFilter.Normalize(segment).Length == 0 || PlainNumber().IsMatch(segment) ? null : segment;
+    }
+
+    // "Santana feat. Rob Thomas", "Santana & Everlast" carry the album's artist
+    private static bool SameArtist(string named, string own) =>
+        named.Contains(own, StringComparison.Ordinal) || (named.Length >= 4 && own.Contains(named, StringComparison.Ordinal));
+
     // Mean seconds between the folder's files and the closest known duration of their tracks; null when nothing compares.
     // Editions often differ by only a few seconds a track (Ihsahn orchestral: 1-9 s), inside the check's tolerance.
     public static double? Deviation(IReadOnlyList<SlskdFileData> files, IReadOnlyList<string>? tracks, IReadOnlyList<TrackLength>? lengths)
@@ -168,6 +231,18 @@ public static partial class SlskdTracklistCheck
 
     [GeneratedRegex(@"\d")]
     private static partial Regex Digits();
+
+    [GeneratedRegex(@"\s+-\s+")]
+    private static partial Regex SegmentSeparator();
+
+    [GeneratedRegex(@"^\s*\d{1,3}(?:[-.]\d{1,2})?(?:\s*[.)_-]\s*|\s+|$)")]
+    private static partial Regex LeadingNumber();
+
+    [GeneratedRegex(@"^\d{1,3}$")]
+    private static partial Regex PlainNumber();
+
+    [GeneratedRegex(@"\bsplit\b", RegexOptions.IgnoreCase)]
+    private static partial Regex SplitWord();
 }
 
 // A normalized track title and its durations in seconds across the album's releases

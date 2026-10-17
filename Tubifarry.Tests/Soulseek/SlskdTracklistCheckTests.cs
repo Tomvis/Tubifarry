@@ -107,6 +107,82 @@ namespace Tubifarry.Tests.Soulseek
                 SlskdTracklistCheck.Reject(twoTracks, tracks, 6, [new WantedTrack("Screaming Suicide", 1, 3, 330_000)]));
         }
 
+        private static readonly List<string> MasterOfPuppets =
+            ["Battery", "Master of Puppets", "The Thing That Should Not Be", "Welcome Home (Sanitarium)", "Disposable Heroes", "Leper Messiah", "Orion", "Damage, Inc."];
+
+        // MUSIC-104: a covers album fits the tracklist and its durations, but each file names another artist
+        [Fact]
+        public void Covers_album_by_other_artists_is_rejected()
+        {
+            List<SlskdFileData> kerrang = Folder("01 - Machine Head - Battery.mp3", "02 - Trivium - Master Of Puppets.mp3",
+                "03 - Mendeed - The Thing That Should Not Be.mp3", "04 - Bullet For My Valentine - Welcome Home (Sanitarium).mp3",
+                "05 - Chimaira - Disposable Heroes.mp3", "06 - Fightstar - Leper Messiah.mp3", "07 - Mastodon - Orion (Instrumental).mp3",
+                "08 - Funeral For a Friend - Damage Inc..mp3", "Kerrang! Presents 'Remastered'.jpg");
+            Assert.Equal("files by other artists (Machine Head, Trivium, Mendeed, …)", SlskdTracklistCheck.OtherArtists(kerrang, MasterOfPuppets, "Metallica"));
+        }
+
+        [Fact]
+        public void Files_named_after_the_album_artist_are_kept()
+        {
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder([.. MasterOfPuppets.Select((t, i) => $"{i + 1:00} - Metallica - {t}.flac")]), MasterOfPuppets, "Metallica"));
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder([.. MasterOfPuppets.Select((t, i) => $"Metallica - Master of Puppets - {i + 1:00} - {t}.flac")]), MasterOfPuppets, "Metallica"));
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder([.. MasterOfPuppets.Select((t, i) => $"{i + 1:00} - {t} - Live in Seattle {1989 + i}.flac")]), MasterOfPuppets, "Metallica"));
+        }
+
+        [Fact]
+        public void Guests_split_albums_and_compilations_are_kept()
+        {
+            List<string> supernatural = ["Yaleo", "Love of My Life", "Put Your Lights On", "Smooth", "Maria Maria"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("01 - Santana - Yaleo.flac", "02 - Santana feat. Dave Matthews - Love of My Life.flac",
+                "03 - Santana & Everlast - Put Your Lights On.flac", "04 - Santana feat. Rob Thomas - Smooth.flac", "05 - Santana feat. The Product G&B - Maria Maria.flac"),
+                supernatural, "Santana"));
+
+            List<string> split = ["Panopticon I", "Panopticon II", "Bitter Spring I", "Bitter Spring II"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("01 - Panopticon - Panopticon I.flac", "02 - Panopticon - Panopticon II.flac",
+                "03 - When Bitter Spring Sleeps - Bitter Spring I.flac", "04 - When Bitter Spring Sleeps - Bitter Spring II.flac"), split, "Panopticon"));
+
+            List<SlskdFileData> various = Folder("01 - Machine Head - Battery.mp3", "02 - Trivium - Master Of Puppets.mp3", "03 - Mendeed - The Thing That Should Not Be.mp3");
+            Assert.Null(SlskdTracklistCheck.OtherArtists(various, MasterOfPuppets, "Various Artists"));
+            Assert.Null(SlskdTracklistCheck.OtherArtists(various, MasterOfPuppets, null));
+        }
+
+        private static List<SlskdFileData> FolderIn(string folder, params string[] names) =>
+            [.. names.Select(n => new SlskdFileData($@"music\{folder}\{n}", null, null, 1000, null, null, null, 0, false))];
+
+        // Replay of 930 imported slskd folders: none of these is a covers album
+        [Fact]
+        public void Numbering_works_and_chapters_are_not_artists()
+        {
+            List<string> elvis = ["I Got a Woman", "Blue Moon", "Tutti Frutti", "Money Honey"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("0101 - I Got a Woman.flac", "0102 - Blue Moon.flac", "0103 - Tutti Frutti.flac", "0104 - Money Honey.flac"),
+                elvis, "Elvis Presley"));
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("A1 - I Got a Woman.flac", "A2 - Blue Moon.flac", "B1 - Tutti Frutti.flac", "B2 - Money Honey.flac"),
+                elvis, "Elvis Presley"));
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("Marla Glen - Friends (2003) 01 - I Got a Woman.flac", "Marla Glen - Friends (2003) 02 - Blue Moon.flac",
+                "Marla Glen - Friends (2003) 03 - Tutti Frutti.flac", "Marla Glen - Friends (2003) 04 - Money Honey.flac"), elvis, "Elvis Presley"));
+
+            List<string> morricone = ["Sergio Leone Suite: Deborah's Theme", "Giuseppe Tornatore Suite: Playing Love", "Brian DePalma Suite: Main Theme", "Moses and Marco Polo Suite: Journey"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("01. Sergio Leone Suite - Deborah's Theme.flac", "02. Giuseppe Tornatore Suite - Playing Love.flac",
+                "03. Brian DePalma Suite - Main Theme.flac", "04. Moses and Marco Polo Suite - Journey.flac"), morricone, "Ennio Morricone"));
+
+            List<string> element = ["Used", "In the Flesh", "Ashes", "Morning on Earth", "Idioglossia", "Her Voices"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(Folder("01 - Chapter I - Used.flac", "02 - Chapter I - In the Flesh.flac", "03 - Chapter II - Ashes.flac",
+                "04 - Chapter II - Morning on Earth.flac", "05 - Chapter III - Idioglossia.flac", "06 - Chapter III - Her Voices.flac"), element, "Pain of Salvation"));
+        }
+
+        [Fact]
+        public void Split_named_by_its_folder_is_kept()
+        {
+            List<string> breed = ["Veil of Maya", "Martyr", "Out of the Body", "Bastard", "Lost Breed"];
+            string[] files = ["01 Fear Factory - Martyr.flac", "02 Pestilence - Out of the Body.flac", "03 Cynic - Veil Of Maya.flac",
+                "04 Treponem Pal - Bastard.flac", "05 Believer - Lost Breed.flac"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(FolderIn("Cynic - 1993 - The Breed Beyond (Split)", files), breed, "Cynic"));
+
+            List<string> elemental = ["Kings", "Ritual", "Abyss", "Grave"];
+            Assert.Null(SlskdTracklistCheck.OtherArtists(FolderIn("Wildernessking, Oak Pantheon, Kess'khtak, Liber Necris - 2014 - Elemental Nightmares - I",
+                "01 - Wildernessking - Kings.flac", "02 - Oak Pantheon - Ritual.flac", "03 - Kess'khtak - Abyss.flac", "04 - Liber Necris - Grave.flac"), elemental, "Wildernessking"));
+        }
+
         private static List<SlskdFileData> Timed(params (string Name, int Seconds)[] files) =>
             [.. files.Select(f => new SlskdFileData($@"music\Elvis Presley\Gold Collection Vol. 3\{f.Name}", null, null, 1000, f.Seconds, null, null, 0, false))];
 
