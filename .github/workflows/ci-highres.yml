@@ -1,8 +1,8 @@
 name: CI (highres-covers)
 
+# HW-160: manual only. forksync already tests every highres-covers commit on .120; this hosted
+# build (-p:CI=true) never ships.
 on:
-  push:
-    branches: [highres-covers]
   workflow_dispatch:
 
 permissions:
