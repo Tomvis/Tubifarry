@@ -1,5 +1,4 @@
 using NLog;
-using System.Text.RegularExpressions;
 using NzbDrone.Common.Disk;
 using NzbDrone.Common.Extensions;
 using LidarrHttp = NzbDrone.Common.Http;
@@ -221,11 +220,8 @@ namespace Tubifarry.Metadata.Lyrics
             if (lyric == null)
             {
                 _logger.Trace($"No lyrics found for track: {trackInfo.Title} by {trackInfo.Artist}");
-                EnqueueLocalTier(trackFile, null, settings);
                 return null;
             }
-
-            EnqueueLocalTier(trackFile, lyric, settings);
 
             EmbedLyrics(lyric, trackFile, settings);
 
@@ -235,40 +231,6 @@ namespace Tubifarry.Metadata.Lyrics
 
             string relativePath = Path.ChangeExtension(artist.Path.GetRelativePath(trackFile.Path), lyricsFile.Value.Extension);
             return new MetadataFileResult(relativePath, lyricsFile.Value.Content);
-        }
-
-        // Hand off to the local fallback tiers (lyrics-local service) when the online
-        // chain couldn't produce the desired sync level. TRULY fire-and-forget: the
-        // enqueue task is started and intentionally not awaited, so the (synchronous)
-        // metadata pipeline never blocks on it — not even for the HTTP timeout if the
-        // service is unreachable. EnqueueAsync swallows its own errors, so the discarded
-        // task can never fault.
-        private void EnqueueLocalTier(TrackFile trackFile, Lyric? lyric, LyricsEnhancerSettings settings)
-        {
-            if (!settings.LocalLyricsEnabled)
-                return;
-
-            LocalLyricsClient client = new(_httpClient, _logger, settings);
-
-            // Tier 4: no text anywhere -> transcription (labelled low-confidence).
-            if (lyric == null)
-            {
-                if (settings.LocalTranscribeEnabled)
-                    _ = client.EnqueueAsync(trackFile.Path, null, "plugin-transcribe");
-                return;
-            }
-
-            // Tier 3: we have text but it isn't synced to the level we wanted -> align it.
-            if (settings.LocalAlignEnabled
-                && GetSyncLevel(lyric) == SyncLevel.Plain
-                && GetDesiredSyncLevel(settings) > SyncLevel.Plain)
-            {
-                string plainText = string.Join("\n", lyric.Lines
-                    .Select(l => l.Text)
-                    .Where(t => !string.IsNullOrWhiteSpace(t)));
-                if (!string.IsNullOrWhiteSpace(plainText))
-                    _ = client.EnqueueAsync(trackFile.Path, plainText, "plugin-align");
-            }
         }
 
         private async Task<Lyric?> FetchLyricsAsync(TrackInfo trackInfo, LyricsEnhancerSettings settings, LyricsProviderManager providers)
@@ -284,12 +246,6 @@ namespace Tubifarry.Metadata.Lyrics
                 Lyric? lyric = await FetchWithTimeoutAsync(provider.Fetch, provider.Name, provider.Timeout, trackInfo);
                 if (lyric == null)
                     continue;
-
-                if (!IsAcceptableLyric(lyric))
-                {
-                    _logger.Trace($"{provider.Name} returned a stub/credits-only lyric ({CountRealLyricLines(lyric)} real lines), skipping");
-                    continue;
-                }
 
                 if (!LyricsHelper.IsMatch(lyric, trackInfo.Artist, trackInfo.Title, trackInfo.DurationSeconds))
                 {
@@ -343,10 +299,6 @@ namespace Tubifarry.Metadata.Lyrics
                 token => providers.FetchFromUnisonAsync(track.Artist, track.Title, track.Album, track.DurationSeconds, token), "Unison", ProviderTimeout);
             yield return (settings.NetEaseEnabled,
                 token => providers.FetchFromNetEaseAsync(track.Artist, track.Title, track.DurationSeconds, token), "NetEase", ProviderTimeout);
-            yield return (settings.DarkLyricsEnabled,
-                _ => providers.FetchFromDarkLyricsAsync(track.Artist, track.Title, track.Album), "DarkLyrics", ProviderTimeout);
-            yield return (settings.MetalArchivesEnabled && !string.IsNullOrWhiteSpace(settings.FlareSolverrUrl),
-                _ => providers.FetchFromMetalArchivesAsync(track.Artist, track.Title, track.Album), "MetalArchives", ProviderTimeout);
             yield return (settings.GeniusEnabled && !string.IsNullOrWhiteSpace(settings.GeniusApiKey),
                 token => providers.FetchFromGeniusAsync(track.Artist, track.Title, token), "Genius", GeniusTimeout);
         }
@@ -398,7 +350,7 @@ namespace Tubifarry.Metadata.Lyrics
                 return null;
 
             string? content = target.Value.Converter.Write(lyricWithMeta);
-            return string.IsNullOrWhiteSpace(content) ? null : (content, target.Value.Extension);
+            return string.IsNullOrEmpty(content) ? null : (content, target.Value.Extension);
         }
 
         private static string? GetLyricsContent(Lyric lyric, LyricOptions option) =>
@@ -436,33 +388,6 @@ namespace Tubifarry.Metadata.Lyrics
             SyncLevel embedLevel = ForOption((LyricOptions)settings.LyricEmbeddingOption);
             return fileLevel > embedLevel ? fileLevel : embedLevel;
         }
-
-        // Quality gate: reject empty / one-or-two-line / credits-only results so the provider
-        // chain keeps searching instead of accepting a garbage .lrc. Catches the "X Contributors"
-        // Genius stubs and NetEase credits-only blocks that produced ~1,700 bad existing lyrics.
-        private const int MinAcceptableLyricLines = 3;
-
-        private static readonly Regex CreditsLineRegex = new(
-            @"^\s*(作词|作曲|编曲|制作人?|监制|混音|母带|录音|出品人?|策划|发行|" +
-            @"lyrics?|music|composed?|written|arranged?|produced?|performed|" +
-            @"vocals?|guitars?|drums?|bass|mixed|mastered|engineered)\s*(by\b|[:：])",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        // Non-lyric "content" lines some providers return: structure / instrumental markers and
-        // performance annotations wholly wrapped in brackets ([Instrumental], [Chorus 1], [Solo: X],
-        // [?], [Music: Mirai]), plus Genius scrape headers ("2 ContributorsXyz Lyrics"). Excluding
-        // these from the real-line count stops instrumental tracks and Genius stubs slipping the gate.
-        private static readonly Regex JunkLineRegex = new(
-            @"^\s*\[[^\]]*\]\s*$|\b\d+\s*contributors?\b",
-            RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
-        private static int CountRealLyricLines(Lyric lyric) => lyric.Lines.Count(line =>
-            !string.IsNullOrWhiteSpace(line.Text)
-            && !CreditsLineRegex.IsMatch(line.Text)
-            && !JunkLineRegex.IsMatch(line.Text));
-
-        private static bool IsAcceptableLyric(Lyric lyric) =>
-            CountRealLyricLines(lyric) >= MinAcceptableLyricLines;
 
         private static SyncLevel GetSyncLevel(Lyric lyric) =>
             lyric.HasWordSync ? SyncLevel.WordSynced :

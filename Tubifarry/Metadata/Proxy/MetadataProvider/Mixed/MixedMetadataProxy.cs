@@ -2,11 +2,9 @@
 using NLog;
 using NzbDrone.Common.Http;
 using NzbDrone.Core.Datastore;
-using NzbDrone.Core.MediaCover;
 using NzbDrone.Core.MetadataSource;
 using NzbDrone.Core.Music;
 using System.Reflection;
-using Tubifarry.Metadata.Covers;
 
 namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
 {
@@ -28,13 +26,11 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
 
         private readonly IArtistService _artistService;
         private readonly IProvideAdaptiveThreshold _adaptiveThreshold;
-        private readonly ICoverArtUpgrader _coverUpgrader;
 
-        public MixedMetadataProxy(Lazy<IProxyService> proxyService, IProvideAdaptiveThreshold adaptiveThreshold, IArtistService artistService, ICoverArtUpgrader coverUpgrader, Logger logger) : base(proxyService, logger)
+        public MixedMetadataProxy(Lazy<IProxyService> proxyService, IProvideAdaptiveThreshold adaptiveThreshold, IArtistService artistService, Logger logger) : base(proxyService, logger)
         {
             _adaptiveThreshold = adaptiveThreshold;
             _artistService = artistService;
-            _coverUpgrader = coverUpgrader;
         }
 
         #region Proxy Methods
@@ -49,10 +45,7 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
             ProxyCandidate selected = candidates[0];
             _logger.Trace($"GetAlbumInfo: Using proxy {selected.Proxy.Name} with priority {selected.Priority} for album id {id}");
 
-            Tuple<string, Album, List<ArtistMetadata>> result =
-                InvokeProxyMethod<Tuple<string, Album, List<ArtistMetadata>>>(selected.Proxy, nameof(GetAlbumInfo), id);
-            TryUpgradeCover(result?.Item2);
-            return result;
+            return InvokeProxyMethod<Tuple<string, Album, List<ArtistMetadata>>>(selected.Proxy, nameof(GetAlbumInfo), id);
         }
 
         public HashSet<string> GetChangedAlbums(DateTime startTime) =>
@@ -431,49 +424,5 @@ namespace Tubifarry.Metadata.Proxy.MetadataProvider.Mixed
         }
 
         #endregion Utility Methods
-
-        private void TryUpgradeCover(Album? album)
-        {
-            MixedMetadataProxySettings settings = ActiveSettings;
-            if (album == null || settings is not { EnableHighResCovers: true })
-                return;
-            try
-            {
-                CoverQuery query = new(
-                    ArtistName: album.ArtistMetadata?.Value?.Name ?? album.Artist?.Value?.Name ?? string.Empty,
-                    AlbumTitle: album.Title ?? string.Empty,
-                    ReleaseMbId: null,
-                    ReleaseGroupMbId: album.ForeignAlbumId,
-                    Barcode: null);
-                if (string.IsNullOrWhiteSpace(query.ArtistName) || string.IsNullOrWhiteSpace(query.AlbumTitle))
-                    return;
-
-                CoverCandidate? best = _coverUpgrader
-                    .FindBestAsync(query, settings.ParsedSourceOrder(), settings.MinCoverResolution, System.Threading.CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                if (best != null)
-                {
-                    album.Images ??= new List<MediaCover>();
-                    album.Images.RemoveAll(i => i.CoverType == MediaCoverTypes.Cover);
-                    album.Images.Insert(0, new MediaCover(MediaCoverTypes.Cover, best.Url));
-                    _logger.Debug($"Upgraded cover for '{album.Title}' via {best.Source}");
-                }
-
-                string? discUrl = _coverUpgrader
-                    .GetDiscArtUrlAsync(query, System.Threading.CancellationToken.None)
-                    .GetAwaiter().GetResult();
-                if (!string.IsNullOrEmpty(discUrl))
-                {
-                    album.Images ??= new List<MediaCover>();
-                    album.Images.RemoveAll(i => i.CoverType == MediaCoverTypes.Disc);
-                    album.Images.Add(new MediaCover(MediaCoverTypes.Disc, discUrl));
-                    _logger.Debug($"Added high-res disc art for '{album.Title}'");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                _logger.Debug(ex, "High-res cover upgrade failed for album '{0}'", album?.Title);
-            }
-        }
     }
 }

@@ -22,8 +22,6 @@ namespace Tubifarry.Metadata.Lyrics
         private readonly Lazy<LyricsPlusProvider> _lyricsPlusProvider;
         private readonly Lazy<UnisonProvider> _unisonProvider;
         private readonly Lazy<NetEaseProvider> _netEaseProvider;
-        private readonly Lazy<DarkLyricsProvider> _darkLyricsProvider;
-        private readonly Lazy<MetalArchivesProvider> _metalArchivesProvider;
 
         public LyricsProviderManager(HttpClient httpClient, LidarrHttp.IHttpClient pageClient, Logger logger, LyricsEnhancerSettings settings)
         {
@@ -38,8 +36,6 @@ namespace Tubifarry.Metadata.Lyrics
             _lyricsPlusProvider = new Lazy<LyricsPlusProvider>(() => new LyricsPlusProvider(_httpClient, _logger, _settings));
             _unisonProvider = new Lazy<UnisonProvider>(() => new UnisonProvider(_httpClient, _logger, _settings));
             _netEaseProvider = new Lazy<NetEaseProvider>(() => new NetEaseProvider(_logger, _settings));
-            _darkLyricsProvider = new Lazy<DarkLyricsProvider>(() => new DarkLyricsProvider(_httpClient, _logger, _settings));
-            _metalArchivesProvider = new Lazy<MetalArchivesProvider>(() => new MetalArchivesProvider(_httpClient, _logger, _settings));
         }
 
         public Task<Lyric?> FetchFromLrcLibAsync(string artistName, string trackTitle, string albumName, int duration, CancellationToken token)
@@ -59,11 +55,5 @@ namespace Tubifarry.Metadata.Lyrics
 
         public Task<Lyric?> FetchFromNetEaseAsync(string artistName, string trackTitle, int duration, CancellationToken token)
             => _netEaseProvider.Value.FetchLyricsAsync(artistName, trackTitle, duration, token);
-
-        public Task<Lyric?> FetchFromDarkLyricsAsync(string artistName, string trackTitle, string albumName)
-            => _darkLyricsProvider.Value.FetchLyricsAsync(artistName, trackTitle, albumName);
-
-        public Task<Lyric?> FetchFromMetalArchivesAsync(string artistName, string trackTitle, string albumName)
-            => _metalArchivesProvider.Value.FetchLyricsAsync(artistName, trackTitle, albumName);
     }
 }

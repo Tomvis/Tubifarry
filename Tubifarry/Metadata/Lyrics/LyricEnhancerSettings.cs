@@ -28,7 +28,7 @@ namespace Tubifarry.Metadata.Lyrics
 
             // Validate at least one provider is enabled
             RuleFor(x => x)
-                .Must(x => x.LrcLibEnabled || x.GeniusEnabled || x.BinimumEnabled || x.LyricsPlusEnabled || x.UnisonEnabled || x.NetEaseEnabled || x.DarkLyricsEnabled || x.MetalArchivesEnabled)
+                .Must(x => x.LrcLibEnabled || x.GeniusEnabled || x.BinimumEnabled || x.LyricsPlusEnabled || x.UnisonEnabled || x.NetEaseEnabled)
                 .WithMessage("At least one lyrics provider must be enabled");
 
             // Validate UpdateInterval when scheduled updates are enabled
@@ -108,37 +108,6 @@ namespace Tubifarry.Metadata.Lyrics
 
         [FieldDefinition(19, Label = "Update Interval", Type = FieldType.Number, Unit = "days", Section = MetadataSectionType.Metadata, HelpText = "How often to run scheduled lyrics updates.")]
         public int UpdateInterval { get; set; } = 7;
-
-        // DarkLyrics Provider settings
-        [FieldDefinition(19, Label = "Enable DarkLyrics", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use DarkLyrics as a lyrics provider (plain text; metal archive)")]
-        public bool DarkLyricsEnabled { get; set; }
-
-        // Metal Archives Provider settings
-        [FieldDefinition(20, Label = "Enable Metal Archives", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Use Encyclopaedia Metallum (plain text; requires FlareSolverr for Cloudflare)")]
-        public bool MetalArchivesEnabled { get; set; }
-
-        [FieldDefinition(21, Label = "FlareSolverr URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "FlareSolverr endpoint used to bypass Cloudflare for Metal Archives", Placeholder = "http://localhost:8191")]
-        public string FlareSolverrUrl { get; set; } = string.Empty;
-
-        // Local fallback tiers (lyrics-local service) — Tier 3 forced alignment & Tier 4
-        // transcription. When the online providers fail, the enhancer hands the track off
-        // to an out-of-process service that does source separation + Whisper. Heavy work
-        // never blocks the metadata pipeline; the service writes the .lrc/.txt sidecar.
-        [FieldDefinition(22, Label = "Enable Local Lyric Tiers", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Hand tracks the online providers couldn't sync to the lyrics-local service (forced alignment / transcription)")]
-        public bool LocalLyricsEnabled { get; set; }
-
-        [FieldDefinition(23, Label = "lyrics-local Service URL", Type = FieldType.Url, Section = MetadataSectionType.Metadata, HelpText = "Base URL of the lyrics-local service", Placeholder = "http://10.0.0.120:8585")]
-        public string LocalLyricsServiceUrl { get; set; } = "http://10.0.0.120:8585";
-
-        [FieldDefinition(24, Label = "Local Tier 3 (Forced Alignment)", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "When plain lyrics exist but no synced version, align the text to the audio to produce an .lrc")]
-        public bool LocalAlignEnabled { get; set; } = true;
-
-        [FieldDefinition(25, Label = "Local Tier 4 (Transcription)", Type = FieldType.Checkbox, Section = MetadataSectionType.Metadata, HelpText = "Last resort: when no lyric text exists anywhere, transcribe the vocals (labelled low-confidence)")]
-        public bool LocalTranscribeEnabled { get; set; } = true;
-
-        public LyricsEnhancerSettings() => Instance = this;
-
-        public static LyricsEnhancerSettings? Instance { get; private set; }
 
         public NzbDroneValidationResult Validate() => new(Validator.Validate(this));
     }
