@@ -86,6 +86,12 @@ namespace Tubifarry.Indexers.Soulseek
                         if (string.IsNullOrEmpty(directoryGroup.Key))
                             continue;
 
+                        if (!SlskdTracklistCheck.HasAudio(directoryGroup))
+                        {
+                            _logger.Trace($"Filtered (no audio): {response.Username}:{directoryGroup.Key}");
+                            continue;
+                        }
+
                         SlskdFolderData folderData = _itemsParser.ParseFolderName(directoryGroup.Key) with
                         {
                             Username = response.Username,

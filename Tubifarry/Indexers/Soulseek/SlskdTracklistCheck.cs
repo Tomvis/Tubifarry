@@ -17,6 +17,9 @@ public static partial class SlskdTracklistCheck
 
     private record AudioFile(HashSet<string> Titles, int? Seconds);
 
+    // MUSIC-201: a folder of scans, .cue and .log files can't import; grabbing one made decluttarr remove it and re-search
+    public static bool HasAudio(IEnumerable<SlskdFileData> files) => files.Any(SlskdWantedFileFilter.IsAudio);
+
     // Why the folder doesn't fit, or null to keep it
     public static string? Reject(IReadOnlyList<SlskdFileData> files, IReadOnlyList<string>? tracks, int trackCount, IReadOnlyList<WantedTrack>? wanted,
         IReadOnlyList<TrackLength>? lengths = null)

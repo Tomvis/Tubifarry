@@ -20,6 +20,16 @@ namespace Tubifarry.Tests.Soulseek
             ["River Flows in You", "May Be", "Love Me", "It's Your Day", "If I Could See You Again", "Destiny of Love", "Tears on Love",
              "Yellow Room", "Kiss the Rain", "Dreams", "Spring Rain", "Do You", "Because I Love You"];
 
+        // MUSIC-201: Sepultura "Bestial Devastation" was grabbed 9x from folders of scans, .cue and .log files
+        [Fact]
+        public void Folder_without_audio_has_no_audio()
+        {
+            Assert.False(SlskdTracklistCheck.HasAudio(Folder("Cover/front.jpg", "Cover/back.JPG", "album.cue", "album.log", "info.nfo")));
+            Assert.False(SlskdTracklistCheck.HasAudio([]));
+            Assert.True(SlskdTracklistCheck.HasAudio(Folder("cover.jpg", "01 - Bestial Devastation.FLAC")));
+            Assert.True(SlskdTracklistCheck.HasAudio([new SlskdFileData(@"music\A\B\01 - x.mp3", null, null, 1000, null, "", null, 0, false)]));
+        }
+
         [Fact]
         public void Same_named_album_by_another_artist_is_rejected()
         {
