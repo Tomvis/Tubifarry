@@ -26,7 +26,6 @@ namespace Tubifarry.Indexers.YouTube
         private readonly YouTubeIndexer _youTubeIndexer;
         private YouTubeMusicClient? _youTubeClient;
         private YouTubeMusicClient? _metadataClient;
-        private SessionTokens? _sessionToken;
 
         private static readonly Lazy<Func<JObject, Page<SearchResult>?>?> _getPageDelegate = new(() =>
         {
@@ -183,11 +182,10 @@ namespace Tubifarry.Indexers.YouTube
 
         private void UpdateClient()
         {
-            if (_sessionToken?.IsValid == true)
-                return;
-            _sessionToken = TrustedSessionHelper.GetTrustedSessionTokensAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
-            _youTubeClient = TrustedSessionHelper.CreateAuthenticatedClientAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl, _youTubeIndexer.Settings.CookiePath).GetAwaiter().GetResult();
-            _metadataClient = TrustedSessionHelper.CreateMetadataClientAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
+            // Tomvis fork (MUSIC-210): always ask the shared cache; Lidarr keeps old parser instances alive,
+            // so a client cached here would outlive a token rotation.
+            _youTubeClient = TrustedSessionHelper.GetSharedClientAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl, _youTubeIndexer.Settings.CookiePath).GetAwaiter().GetResult();
+            _metadataClient = TrustedSessionHelper.GetSharedMetadataClientAsync(_youTubeIndexer.Settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
         }
 
         private static AlbumData ExtractAlbumInfo(AlbumSearchResult album) => new("Youtube", nameof(YoutubeDownloadProtocol))

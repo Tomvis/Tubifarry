@@ -45,8 +45,8 @@ namespace Tubifarry.Indexers.Spotify
             try
             {
                 _sessionTokens = TrustedSessionHelper.GetTrustedSessionTokensAsync(settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
-                _ytClient = TrustedSessionHelper.CreateAuthenticatedClientAsync(settings.TrustedSessionGeneratorUrl, settings.CookiePath).GetAwaiter().GetResult();
-                _metadataClient = TrustedSessionHelper.CreateMetadataClientAsync(settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
+                _ytClient = TrustedSessionHelper.GetSharedClientAsync(settings.TrustedSessionGeneratorUrl, settings.CookiePath).GetAwaiter().GetResult();
+                _metadataClient = TrustedSessionHelper.GetSharedMetadataClientAsync(settings.TrustedSessionGeneratorUrl).GetAwaiter().GetResult();
                 _logger.Debug("Successfully created authenticated YouTube Music client for enrichment");
             }
             catch (Exception ex)

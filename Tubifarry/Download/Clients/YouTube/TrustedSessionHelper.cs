@@ -187,6 +187,27 @@ namespace Tubifarry.Download.Clients.YouTube
         public static Task<YouTubeMusicClient> CreateMetadataClientAsync(string? trustedSessionGeneratorUrl = null) =>
             CreateAuthenticatedClientAsync(trustedSessionGeneratorUrl, cookiePath: null);
 
+        private static readonly SharedClientCache<YouTubeMusicClient> _sharedClients = new();
+
+        /// <summary>
+        /// Tomvis fork (MUSIC-210): process-wide streaming client, reused while tokens and cookies are unchanged.
+        /// For read-only callers (indexers). Callers that set video-bound tokens on a client must own it.
+        /// </summary>
+        public static async Task<YouTubeMusicClient> GetSharedClientAsync(string? trustedSessionGeneratorUrl = null, string? cookiePath = null)
+        {
+            ClientSessionInfo session = await CreateSessionInfoAsync(trustedSessionGeneratorUrl, cookiePath);
+            return _sharedClients.GetOrCreate($"stream|{trustedSessionGeneratorUrl}|{cookiePath}", session, CreateAuthenticatedClient);
+        }
+
+        /// <summary>
+        /// Tomvis fork (MUSIC-210): process-wide cookie-less metadata client (see CreateMetadataClientAsync).
+        /// </summary>
+        public static async Task<YouTubeMusicClient> GetSharedMetadataClientAsync(string? trustedSessionGeneratorUrl = null)
+        {
+            ClientSessionInfo session = await CreateSessionInfoAsync(trustedSessionGeneratorUrl, cookiePath: null);
+            return _sharedClients.GetOrCreate($"meta|{trustedSessionGeneratorUrl}", session, CreateAuthenticatedClient);
+        }
+
         /// <summary>
         /// Updates an existing YouTube Music client with video-bound tokens
         /// </summary>
