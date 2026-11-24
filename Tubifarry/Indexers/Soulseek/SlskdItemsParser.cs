@@ -232,7 +232,7 @@ namespace Tubifarry.Indexers.Soulseek
                 ShowPriorityInTitle = settings?.ShowPriorityInTitle ?? false,
                 SourceTag = sourceTag,
                 CustomString = JsonSerializer.Serialize(filesToDownload),
-                ExtraInfo = [editionLabel, edition, .. releaseTags.Where(t => !string.Equals(t, edition, StringComparison.OrdinalIgnoreCase)), $"👤 {folderData.Username} ", $"{(folderData.HasFreeUploadSlot ? "⚡" : "❌")} {folderData.UploadSpeed / 1024.0 / 1024.0:F2}MB/s ", folderData.QueueLength == 0 ? "" : $"📋 {folderData.QueueLength}"],
+                ExtraInfo = [.. new[] { editionLabel, edition }.OfType<string>(), .. releaseTags.Where(t => !string.Equals(t, edition, StringComparison.OrdinalIgnoreCase)), $"👤 {folderData.Username} ", $"{(folderData.HasFreeUploadSlot ? "⚡" : "❌")} {folderData.UploadSpeed / 1024.0 / 1024.0:F2}MB/s ", folderData.QueueLength == 0 ? "" : $"📋 {folderData.QueueLength}"],
                 Duration = TotalDuration
             };
         }

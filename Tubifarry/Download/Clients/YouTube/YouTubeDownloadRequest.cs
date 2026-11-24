@@ -150,7 +150,12 @@ namespace Tubifarry.Download.Clients.YouTube
                 NumberOfAttempts = 3,
                 DeleteFilesOnFailure = true,
                 Chunks = Options.Chunks,
-                RequestFailed = (_, __) => LogAndAppendMessage($"Downloading track '{trackInfo.Name}' in album '{albumInfo.Name}' failed.", LogLevel.Debug),
+                RequestFailed = (request, response) =>
+                {
+                    string reason = string.Join("; ", request?.Exception?.Flatten().InnerExceptions.Select(e => e.Message).Distinct() ?? []);
+                    LogAndAppendMessage($"Downloading track '{trackInfo.Name}' in album '{albumInfo.Name}' failed{(response != null ? $" with HTTP {(int)response.StatusCode}" : "")}: {(reason.Length > 0 ? reason : "unknown error")}", LogLevel.Warn);
+                    _logger?.Debug(request?.Exception, $"Download of track '{trackInfo.Name}' failed");
+                },
                 WriteMode = WriteMode.AppendOrTruncate,
                 AutoStart = true
             });
@@ -170,7 +175,10 @@ namespace Tubifarry.Download.Clients.YouTube
                         if (File.Exists(downloadRequest.Destination))
                             File.Delete(downloadRequest.Destination);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.Trace(ex, $"Could not delete {downloadRequest.Destination}");
+                    }
                 },
                 CancellationToken = token
             });
